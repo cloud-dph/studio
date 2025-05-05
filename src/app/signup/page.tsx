@@ -1,5 +1,3 @@
-'use client';
-
 import * as React from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
@@ -15,9 +13,10 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription, // Import FormDescription
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionComponent } from '@/components/ui/card'; // Alias to avoid naming conflict
 import {
   Carousel,
   CarouselContent,
@@ -164,7 +163,7 @@ export default function SignupPage() {
      if (!selectedImageUrl && profileImages.length > 0) {
          handleImageSelect(profileImages[0].url);
      }
-  }, [form, selectedImageUrl]); // Added selectedImageUrl
+  }, [form, selectedImageUrl]);
 
 
   const handleImageSelect = (imageUrl: string) => {
@@ -371,3 +370,4 @@ export default function SignupPage() {
     </div>
   );
 }
+
