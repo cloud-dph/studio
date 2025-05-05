@@ -20,6 +20,7 @@ import { Lock } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase'; // Import Firestore instance
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
+import { analyzeLoginAttempt, type AnalyzeLoginOutput } from '@/ai/flows/analyze-login-flow'; // Import the GenAI flow
 
 // Authenticate user against Firestore data
 // WARNING: Storing and comparing plain text passwords is highly insecure!
@@ -96,12 +97,54 @@ export default function PasswordPage() {
         const { success, userData } = await authenticateUser(mobile, data.password);
 
         if (success && userData) {
+             // Analyze login attempt using GenAI
+             let analysisResult: AnalyzeLoginOutput | null = null;
+             try {
+                 analysisResult = await analyzeLoginAttempt({
+                    mobile: mobile,
+                    timestamp: new Date().toISOString(),
+                    // In a real app, gather IP and User Agent here if possible
+                 });
+
+                 console.log("Login Analysis:", analysisResult);
+
+                 if (analysisResult.isSuspicious) {
+                     // Handle suspicious login - e.g., show warning, require MFA, log event
+                     toast({
+                        title: "Security Alert",
+                        description: `Potential suspicious activity detected: ${analysisResult.reason} (Score: ${analysisResult.riskScore.toFixed(2)})`,
+                        variant: "destructive", // Or a specific 'warning' variant if available
+                        duration: 7000, // Show for longer
+                     });
+                     // Decide if you want to block login or just warn
+                     // For now, we'll proceed but show the warning
+                 } else {
+                      toast({
+                        title: "Security Check",
+                        description: `Login analysis complete: ${analysisResult.reason}`,
+                        duration: 3000,
+                     });
+                 }
+
+             } catch (analysisError) {
+                 console.error("Error analyzing login attempt:", analysisError);
+                 // Decide if failure to analyze should block login or just be logged
+                 toast({
+                     title: "Security Analysis Skipped",
+                     description: "Could not perform security analysis on this login attempt.",
+                     variant: "default", // Neutral variant
+                     duration: 5000,
+                 });
+             }
+
              // Store user session info if needed (e.g., localStorage, context)
-             // For now, just store essential data for profile page access
              if (typeof window !== 'undefined') {
                localStorage.setItem('userData', JSON.stringify(userData));
                localStorage.removeItem('pendingMobile'); // Clean up temp storage
+
                // Redirect to external URL after successful login
+               // Consider delaying redirect slightly if showing a security toast
+               await new Promise(resolve => setTimeout(resolve, analysisResult?.isSuspicious ? 1500 : 500)); // Small delay
                window.location.href = 'http://abc.xyz';
              }
              // Note: router.push('/profile') is replaced by the external redirect above.
@@ -122,6 +165,10 @@ export default function PasswordPage() {
         });
         setIsLoading(false);
     }
+      // setIsLoading(false) might be needed here if redirect doesn't happen immediately
+      // due to analysis or toast delays, but window.location.href usually takes over.
+      // Add it back if users get stuck in a loading state on error or analysis failure.
+      // setIsLoading(false);
   }
 
   if (!mobile) {
