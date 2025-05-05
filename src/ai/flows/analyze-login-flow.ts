@@ -1,3 +1,4 @@
+
 'use server';
 /**
  * @fileOverview Analyzes login attempts for suspicious patterns using AI.
@@ -14,23 +15,22 @@ import {z} from 'genkit';
 const AnalyzeLoginInputSchema = z.object({
     mobile: z.string().describe('The mobile number attempting to log in.'),
     timestamp: z.string().datetime().describe('The ISO 8601 timestamp of the login attempt.'),
-    // In a real scenario, include IP Address, User Agent, etc.
+    // In a real scenario, include IP Address, User Agent, Location Data etc.
     // ipAddress: z.string().optional().describe('The IP address of the login attempt.'),
     // userAgent: z.string().optional().describe('The User Agent string of the client.'),
 });
 export type AnalyzeLoginInput = z.infer<typeof AnalyzeLoginInputSchema>;
 
 const AnalyzeLoginOutputSchema = z.object({
-    isSuspicious: z.boolean().describe('Whether the login attempt is deemed suspicious.'),
-    reason: z.string().describe('The reason for the suspicion, or "Login appears normal" if not suspicious.'),
-    riskScore: z.number().min(0).max(1).describe('A score between 0 (low risk) and 1 (high risk) indicating the level of suspicion.'),
+    isSuspicious: z.boolean().describe('Whether the login attempt is deemed suspicious by the AI.'),
+    reason: z.string().describe('The AI\'s reason for the suspicion, or "Login appears normal" if not suspicious.'),
+    riskScore: z.number().min(0).max(1).describe('A score between 0 (low risk) and 1 (high risk) indicating the level of suspicion, as determined by the AI.'),
 });
 export type AnalyzeLoginOutput = z.infer<typeof AnalyzeLoginOutputSchema>;
 
 
 export async function analyzeLoginAttempt(input: AnalyzeLoginInput): Promise<AnalyzeLoginOutput> {
-    // Placeholder for additional security logic
-    // In a real application, implement rate limiting, IP address checking, etc.
+    // This function now directly calls the flow without additional logic.
     return analyzeLoginFlow(input);
 }
 
@@ -42,13 +42,13 @@ const prompt = ai.definePrompt({
     output: {
         schema: AnalyzeLoginOutputSchema,
     },
-    prompt: `Analyze the following login attempt details for potential security risks or suspicious behavior. Consider factors like the time of the attempt. Although IP address and user agent are not provided, assess based on the available information if the attempt seems unusual or potentially automated.
+    prompt: `Analyze the following login attempt details for potential security risks or suspicious behavior. Consider factors like the time of the attempt. Although IP address and user agent are not provided, assess based on the available information if the attempt seems unusual or potentially automated (e.g., bot activity, credential stuffing patterns if applicable).
 
 Login Details:
 Mobile Number (Identifier): {{{mobile}}}
 Timestamp: {{{timestamp}}}
 
-Is this login attempt suspicious? Provide a boolean flag, a brief reason, and a risk score between 0 (low) and 1 (high). Focus on identifying patterns that might suggest non-human or fraudulent activity, even with limited data. If nothing seems suspicious, indicate that clearly.`,
+Is this login attempt suspicious? Provide a boolean flag, a brief reason, and a risk score between 0 (low) and 1 (high). Focus on identifying patterns that might suggest non-human or fraudulent activity based solely on the provided mobile number and timestamp context. If nothing seems inherently suspicious from this limited data, indicate that clearly.`,
 });
 
 const analyzeLoginFlow = ai.defineFlow<
@@ -61,33 +61,14 @@ const analyzeLoginFlow = ai.defineFlow<
         outputSchema: AnalyzeLoginOutputSchema,
     },
     async (input) => {
-        // Placeholder for additional security logic
-        // In a real application, implement rate limiting, IP address checking, etc.
-        // You might integrate with external services for IP reputation, etc.
+        // Removed the additional time-based rule.
+        // The flow now relies solely on the AI model's analysis.
+        // In a real-world scenario, you might add calls to external services here
+        // (e.g., IP reputation checks, device fingerprinting analysis) before or after the prompt.
 
         const {output} = await prompt(input);
 
-        // Basic rule: Logins between 1 AM and 5 AM are slightly more suspicious
-        const loginHour = new Date(input.timestamp).getHours();
-        let baseScore = output!.riskScore;
-        let reason = output!.reason;
-        let isSuspicious = output!.isSuspicious;
-
-        if (loginHour >= 1 && loginHour < 5) {
-            if (baseScore < 0.7) { // Increase score if not already high
-                baseScore = Math.min(1, baseScore + 0.2);
-                isSuspicious = baseScore > 0.5; // Update suspicious flag based on new score
-                if (reason === 'Login appears normal' || !reason.includes('unusual hour')) {
-                    reason = isSuspicious ? `Login at unusual hour (${loginHour}:00). ${reason}`.replace('. Login appears normal', '') : reason;
-                }
-            }
-        }
-
-
-        return {
-            isSuspicious: isSuspicious,
-            reason: reason.trim(),
-            riskScore: baseScore,
-        };
+        // Return the AI's assessment directly.
+        return output!; // Assuming the prompt always returns a valid output based on the schema.
     }
 );

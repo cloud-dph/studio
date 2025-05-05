@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -20,11 +21,10 @@ import { Lock } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase'; // Import Firestore instance
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
-import { analyzeLoginAttempt, type AnalyzeLoginOutput } from '@/ai/flows/analyze-login-flow'; // Import the GenAI flow
-import type { UserAccount, Profile } from '@/types/user'; // Import shared types
+import type { UserAccount } from '@/types/user'; // Import shared types
 
 // Authenticate user against Firestore data
-// Fetches the user account document which includes profiles array
+// Fetches the user account document which includes profile (singular)
 const authenticateUser = async (mobile: string, password: string): Promise<{ success: boolean; userAccount?: UserAccount }> => {
   try {
     const userDocRef = doc(db, 'users', mobile);
@@ -37,7 +37,7 @@ const authenticateUser = async (mobile: string, password: string): Promise<{ suc
         // Construct the full UserAccount object including mobile
         const userAccount: UserAccount = {
           mobile: mobile, // Add mobile from the doc ID
-          profiles: accountData.profiles || [], // Ensure profiles array exists
+          profiles: accountData.profiles || [], // Ensure profiles array exists (though expecting only one)
           password: accountData.password, // Keep password for now, but don't store in localStorage
           createdAt: accountData.createdAt,
         };
@@ -80,18 +80,16 @@ export default function PasswordPage() {
             isLoggedIn = true;
           } else {
             localStorage.removeItem('userAccount'); // Clear invalid data
-            localStorage.removeItem('selectedProfile'); // Clear selected profile too
           }
         } catch (e) {
           console.error("Error parsing user account data on password page", e);
           localStorage.removeItem('userAccount'); // Clear corrupted data
-          localStorage.removeItem('selectedProfile');
         }
       }
 
       if (isLoggedIn) {
-        // User is logged in, redirect to profile selection
-        router.push('/profile');
+        // User is logged in, redirect straight to content
+         window.location.href = 'http://abc.xyz';
       } else {
         setIsCheckingAuth(false); // Finished checking, user is not logged in
       }
@@ -130,56 +128,26 @@ export default function PasswordPage() {
 
     try {
       const { success, userAccount } = await authenticateUser(mobile, data.password);
+
       if (success && userAccount) {
-        // Analyze login attempt using GenAI
-        let analysisResult: AnalyzeLoginOutput | null = null;
-        try {
-          analysisResult = await analyzeLoginAttempt({
-            mobile: mobile,
-            timestamp: new Date().toISOString(),
-            // In a real app, gather IP and User Agent here if possible
-          });
-          console.log("Login Analysis:", analysisResult);
-          if (analysisResult.isSuspicious) {
-            // Handle suspicious login - e.g., show warning, require MFA, log event
-            toast({
-              title: "Security Alert",
-              description: `Potential suspicious activity detected: ${analysisResult.reason} (Score: ${analysisResult.riskScore.toFixed(2)})`,
-              variant: "destructive", // Or a specific 'warning' variant if available
-              duration: 7000, // Show for longer
-            });
-            // Decide if you want to block login or just warn
-            // For now, we'll proceed but show the warning
-          } else {
-            toast({
-              title: "Security Check",
-              description: `Login analysis complete: ${analysisResult.reason}`,
-              duration: 3000,
-            });
-          }
-        } catch (analysisError) {
-          console.error("Error analyzing login attempt:", analysisError);
-          // Decide if failure to analyze should block login or just be logged
-          toast({
-            title: "Security Analysis Skipped",
-            description: "Could not perform security analysis on this login attempt.",
-            variant: "default", // Neutral variant
-            duration: 5000,
-          });
-        }
         // Store user account info (excluding password)
         if (typeof window !== 'undefined') {
           // Prepare data for localStorage (remove password)
-          const { password: _, ...accountToStore } = userAccount;
+          // Convert Timestamp to Date before storing if it exists
+           const { password: _, createdAt, ...accountBase } = userAccount;
+           let accountToStore: Omit<UserAccount, 'password'>;
+           if (createdAt && typeof createdAt.toDate === 'function') {
+                accountToStore = { ...accountBase, createdAt: createdAt.toDate() };
+           } else {
+                // Handle case where createdAt might not be a Timestamp (e.g., already a Date or undefined)
+                accountToStore = { ...accountBase, createdAt: createdAt || new Date() };
+           }
+
           localStorage.setItem('userAccount', JSON.stringify(accountToStore));
           localStorage.removeItem('pendingMobile'); // Clean up temp storage
-          localStorage.removeItem('selectedProfile'); // Clear any previously selected profile
 
-          // Redirect to profile page after successful login
-          // Consider delaying redirect slightly if showing a security toast
-          const delay = analysisResult?.isSuspicious ? 1500 : 500; // Small delay
-          await new Promise(resolve => setTimeout(resolve, delay));
-          router.push('/profile'); // Redirect to profile selection page
+          // Redirect straight to content after successful login
+          window.location.href = 'http://abc.xyz';
         }
       } else {
         toast({
@@ -260,3 +228,4 @@ export default function PasswordPage() {
     </div>
   );
 }
+

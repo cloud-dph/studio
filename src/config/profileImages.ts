@@ -1,6 +1,8 @@
 
 // Configuration for available profile images
 
+// NOTE: This list is currently not used in the simplified version,
+// but kept for potential future re-introduction of avatar selection.
 export const profileImages = [
   { id: 'avatar1', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/21.png', name: 'Abstract Blue', aiHint: 'abstract blue pattern' },
   { id: 'avatar2', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/2.png', name: 'Abstract Green', aiHint: 'abstract green pattern' },
@@ -12,11 +14,11 @@ export const profileImages = [
   { id: 'avatar8', url: 'https://picsum.photos/200/200?random=6', name: 'Forest Path', aiHint: 'forest path trees' },
 ];
 
-// Specific image for the Kids profile
-export const kidsProfileImage = {
-    id: 'kids-avatar', // Identifier for the kids avatar itself
-    url: 'https://picsum.photos/200/200?random=99', // Replace with a suitable Kids avatar URL
-    name: 'Kids Avatar',
-    aiHint: 'cartoon character kids friendly',
-};
-// Note: The 'Kids' profile itself will have the ID 'kids', but it will use this image URL.
+// Kids profile image configuration removed as Kids profile is no longer created by default.
+// export const kidsProfileImage = {
+//     id: 'kids-avatar',
+//     url: 'https://picsum.photos/200/200?random=99',
+//     name: 'Kids Avatar',
+//     aiHint: 'cartoon character kids friendly',
+// };
+

@@ -22,18 +22,16 @@ export default function Home() {
           } else {
             // Invalid data, clear it
             localStorage.removeItem('userAccount');
-            localStorage.removeItem('selectedProfile'); // Also clear selected profile
           }
         } catch (e) {
           console.error("Error parsing user account data from localStorage on root page", e);
           localStorage.removeItem('userAccount'); // Clear corrupted data
-          localStorage.removeItem('selectedProfile');
         }
       }
 
       if (isLoggedIn) {
-        // User is logged in (has account data), redirect to profile selection page
-        router.replace('/profile');
+        // User is logged in (has account data), redirect straight to content
+         window.location.href = 'http://abc.xyz';
       } else {
         // User is not logged in, redirect to login page
         router.replace('/login');
@@ -48,3 +46,4 @@ export default function Home() {
   // This prevents a flash of content before redirection.
   return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
 }
+

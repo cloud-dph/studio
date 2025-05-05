@@ -61,18 +61,16 @@ export default function LoginPage() {
             isLoggedIn = true;
           } else {
             localStorage.removeItem('userAccount'); // Clear invalid data
-            localStorage.removeItem('selectedProfile'); // Also clear selected profile if account data is bad
           }
         } catch (e) {
           console.error("Error parsing user account data on login page", e);
           localStorage.removeItem('userAccount'); // Clear corrupted data
-          localStorage.removeItem('selectedProfile');
         }
       }
 
       if (isLoggedIn) {
-        // User is logged in, redirect to profile selection page
-        router.push('/profile');
+        // User is logged in, redirect straight to content
+        window.location.href = 'http://abc.xyz';
       } else {
         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
       }
@@ -166,3 +164,4 @@ export default function LoginPage() {
     </div>
   );
 }
+
