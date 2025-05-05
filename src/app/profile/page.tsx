@@ -9,6 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area'; // Kept for potential future use
 import { useToast } from '@/hooks/use-toast';
+import { Pencil } from 'lucide-react'; // Import Pencil icon
+
 // Removed Code icon and related code fetching logic
 
 interface UserData {
@@ -95,9 +97,14 @@ export default function ProfilePage() {
                     Mobile: {userData.mobile}
                 </CardDescription>
             </div>
-            <Button onClick={handleLogout} variant="outline" className="mt-4 sm:mt-0 sm:ml-auto">
-                Logout
-            </Button>
+            <div className="flex flex-col sm:flex-row sm:ml-auto gap-2 mt-4 sm:mt-0">
+                 <Button variant="outline" onClick={() => router.push('/profile/edit')}>
+                    <Pencil className="mr-2 h-4 w-4" /> Edit Profile
+                </Button>
+                <Button onClick={handleLogout} variant="outline">
+                    Logout
+                </Button>
+            </div>
            </div>
         </CardHeader>
         <CardContent className="p-6">
