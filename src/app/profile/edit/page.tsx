@@ -47,7 +47,7 @@ interface UserData {
 }
 
 // Function to update user data in Firestore
-const updateUser = async (mobile: string, data: Partial<UserData>): Promise<{ success: boolean; message?: string; updatedData?: UserData }> => {
+const updateUser = async (mobile: string, data: Partial<Pick<UserData, 'name' | 'profileImageUrl' | 'profileImageName'>>): Promise<{ success: boolean; message?: string; updatedData?: UserData }> => {
   try {
     const userDocRef = doc(db, 'users', mobile);
     const userDocSnap = await getDoc(userDocRef);
@@ -57,31 +57,42 @@ const updateUser = async (mobile: string, data: Partial<UserData>): Promise<{ su
     }
 
     const existingData = userDocSnap.data() as UserData;
-    const dataToUpdate: Partial<UserData> = {};
 
-    if (data.name && data.name !== existingData.name) {
-        dataToUpdate.name = data.name;
+    // Construct the data to be updated in Firestore
+    // Only include fields that are actually being passed in `data` and have changed
+    const firestoreUpdateData: Partial<Omit<UserData, 'mobile'>> = {};
+    if (data.name !== undefined && data.name !== existingData.name) {
+        firestoreUpdateData.name = data.name;
     }
-    if (data.profileImageUrl && data.profileImageUrl !== existingData.profileImageUrl) {
-        dataToUpdate.profileImageUrl = data.profileImageUrl;
-        dataToUpdate.profileImageName = data.profileImageName; // Assume name changes with URL
+    if (data.profileImageUrl !== undefined && data.profileImageUrl !== existingData.profileImageUrl) {
+        firestoreUpdateData.profileImageUrl = data.profileImageUrl;
+        // Always update name if URL changes, ensure data.profileImageName is passed
+        firestoreUpdateData.profileImageName = data.profileImageName ?? 'Avatar';
     }
 
-    if (Object.keys(dataToUpdate).length === 0) {
-        return { success: true, message: "No changes detected.", updatedData: existingData };
+
+    // Only update if there are actual changes to send
+    if (Object.keys(firestoreUpdateData).length > 0) {
+         await updateDoc(userDocRef, firestoreUpdateData);
+         console.log("User data updated in Firestore:", firestoreUpdateData);
+    } else {
+        console.log("No changes detected, skipping Firestore update.");
+        // Still return success true if no changes, but with a specific message
+         return { success: true, message: "No changes to save.", updatedData: existingData };
     }
 
-    await updateDoc(userDocRef, dataToUpdate);
-    console.log("User data updated in Firestore:", dataToUpdate);
+    // Construct the full updated user data to return and store locally
+    // Merge existing data with the changes that were sent to Firestore
+    const updatedUserData = { ...existingData, ...firestoreUpdateData, mobile }; // Ensure mobile is included
 
-    const updatedUserData = { ...existingData, ...dataToUpdate };
-    return { success: true, updatedData };
+    return { success: true, updatedData: updatedUserData }; // Return the merged data
 
   } catch (error) {
     console.error("Error updating user in Firestore:", error);
     return { success: false, message: "Profile update failed due to a server error." };
   }
 };
+
 
 // Form Schema - Mobile is not part of the schema as it's not editable
 const FormSchema = z.object({
@@ -106,35 +117,53 @@ export default function EditProfilePage() {
     },
   });
 
-  // Load current user data and initialize form
-  React.useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedData = localStorage.getItem('userData');
-      if (storedData) {
-        try {
-          const parsedData: UserData = JSON.parse(storedData);
-          if (parsedData && parsedData.mobile) {
-            setCurrentUserData(parsedData);
-            form.reset({
-              name: parsedData.name,
-              profileImage: profileImages.find(img => img.url === parsedData.profileImageUrl)?.id || '', // Find ID by URL
-            });
-            setSelectedImage(profileImages.find(img => img.url === parsedData.profileImageUrl)?.id || null);
-          } else {
-            throw new Error("Invalid user data structure.");
+ // Load current user data and initialize form
+ React.useEffect(() => {
+    let isMounted = true; // Flag to prevent state updates on unmounted component
+
+    const loadData = () => {
+      if (typeof window !== 'undefined') {
+        const storedData = localStorage.getItem('userData');
+        if (storedData) {
+          try {
+            const parsedData: UserData = JSON.parse(storedData);
+            if (parsedData && parsedData.mobile) {
+              if (isMounted) {
+                setCurrentUserData(parsedData);
+                const currentImage = profileImages.find(img => img.url === parsedData.profileImageUrl);
+                const currentImageId = currentImage?.id || '';
+                form.reset({ // Use reset to update default values and form state
+                  name: parsedData.name,
+                  profileImage: currentImageId,
+                });
+                setSelectedImage(currentImageId); // Ensure selectedImage state matches
+              }
+            } else {
+              throw new Error("Invalid user data structure.");
+            }
+          } catch (e) {
+            console.error("Failed to load user data for editing", e);
+            if (isMounted) {
+                toast({ title: "Error", description: "Could not load profile data. Please log in again.", variant: "destructive" });
+                router.push('/login');
+            }
           }
-        } catch (e) {
-          console.error("Failed to load user data for editing", e);
-          toast({ title: "Error", description: "Could not load profile data. Please log in again.", variant: "destructive" });
-          router.push('/login');
+        } else {
+           if (isMounted) {
+                toast({ title: "Not Authorized", description: "Please log in to edit your profile.", variant: "destructive" });
+                router.push('/login');
+            }
         }
-      } else {
-        toast({ title: "Not Authorized", description: "Please log in to edit your profile.", variant: "destructive" });
-        router.push('/login');
       }
-    }
-     form.register('profileImage'); // Ensure profileImage is registered
-  }, [router, toast, form]);
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false; // Cleanup function sets flag to false
+    };
+  }, [router, toast, form]); // form added to dependency array for reset
+
 
   const handleImageSelect = (imageId: string) => {
     setSelectedImage(imageId);
@@ -161,24 +190,31 @@ export default function EditProfilePage() {
         return;
     }
 
-    const updateData: Partial<UserData> = {
+    // Prepare data for the updateUser function
+    const updateData: Partial<Pick<UserData, 'name' | 'profileImageUrl' | 'profileImageName'>> = {
         name: data.name,
         profileImageUrl: selectedImageData.url,
-        profileImageName: selectedImageData.name,
+        profileImageName: selectedImageData.name, // Include the name associated with the selected image
     };
 
     try {
         const { success, message, updatedData } = await updateUser(currentUserData.mobile, updateData);
+
         if (success && updatedData) {
-            toast({
-                title: "Profile Updated",
+             toast({
+                title: message === "No changes to save." ? "No Changes" : "Profile Updated",
                 description: message || "Your profile has been successfully updated.",
             });
-            // Update localStorage with new data
-             if (typeof window !== 'undefined') {
+            // Update localStorage ONLY if there was an actual update or initial load
+            if (message !== "No changes to save." && typeof window !== 'undefined') {
                localStorage.setItem('userData', JSON.stringify(updatedData));
-             }
-            router.push('/profile'); // Redirect back to profile view
+            }
+            // Only redirect if changes were made or it wasn't the "no changes" case
+            if (message !== "No changes to save.") {
+                 router.push('/profile'); // Redirect back to profile view
+            } else {
+                 setIsLoading(false); // Stop loading if no changes were made
+            }
         } else {
              toast({
                 title: "Update Failed",
@@ -196,6 +232,7 @@ export default function EditProfilePage() {
         });
         setIsLoading(false);
     }
+     // setIsLoading(false) is handled within the try/catch/finally blocks now
   }
 
   if (!currentUserData) {
