@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -131,7 +130,6 @@ export default function PasswordPage() {
 
     try {
       const { success, userAccount } = await authenticateUser(mobile, data.password);
-
       if (success && userAccount) {
         // Analyze login attempt using GenAI
         let analysisResult: AnalyzeLoginOutput | null = null;
@@ -139,17 +137,19 @@ export default function PasswordPage() {
           analysisResult = await analyzeLoginAttempt({
             mobile: mobile,
             timestamp: new Date().toISOString(),
+            // In a real app, gather IP and User Agent here if possible
           });
-
           console.log("Login Analysis:", analysisResult);
-
           if (analysisResult.isSuspicious) {
+            // Handle suspicious login - e.g., show warning, require MFA, log event
             toast({
               title: "Security Alert",
               description: `Potential suspicious activity detected: ${analysisResult.reason} (Score: ${analysisResult.riskScore.toFixed(2)})`,
-              variant: "destructive",
-              duration: 7000,
+              variant: "destructive", // Or a specific 'warning' variant if available
+              duration: 7000, // Show for longer
             });
+            // Decide if you want to block login or just warn
+            // For now, we'll proceed but show the warning
           } else {
             toast({
               title: "Security Check",
@@ -157,17 +157,16 @@ export default function PasswordPage() {
               duration: 3000,
             });
           }
-
         } catch (analysisError) {
           console.error("Error analyzing login attempt:", analysisError);
+          // Decide if failure to analyze should block login or just be logged
           toast({
             title: "Security Analysis Skipped",
             description: "Could not perform security analysis on this login attempt.",
-            variant: "default",
+            variant: "default", // Neutral variant
             duration: 5000,
           });
         }
-
         // Store user account info (excluding password)
         if (typeof window !== 'undefined') {
           // Prepare data for localStorage (remove password)
@@ -203,7 +202,7 @@ export default function PasswordPage() {
 
   // Show loading indicator while checking auth status or redirecting
   if (isCheckingAuth) {
-      return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
+    return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }
 
   if (!mobile && !isCheckingAuth) {
@@ -251,7 +250,7 @@ export default function PasswordPage() {
               </Button>
             </form>
           </Form>
-           <div className="mt-4 text-center text-sm">
+          <div className="mt-4 text-center text-sm">
             <Button variant="link" onClick={() => router.push(`/login`)} className="text-primary">
               Use a different mobile number?
             </Button>

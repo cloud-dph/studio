@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -127,10 +126,6 @@ export default function ProfilePage() {
     }
   };
 
-  const handleManageProfiles = () => {
-    router.push('/profile/manage'); // Navigate to a new page for managing (editing/adding) profiles
-  };
-
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center">Loading profiles...</div>;
   }
@@ -164,9 +159,6 @@ export default function ProfilePage() {
 
              </div>
 
-             <Button variant="outline" onClick={handleManageProfiles} className="mb-4">
-                <Pencil className="mr-2 h-4 w-4" /> Manage Profiles
-            </Button>
              <Button onClick={handleLogout} variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
                <LogOut className="mr-1.5 h-3.5 w-3.5" /> Logout from Account ({userAccount.mobile})
             </Button>
@@ -175,4 +167,3 @@ export default function ProfilePage() {
     </div>
   );
 }
-

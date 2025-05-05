@@ -1,4 +1,3 @@
-
 'use client';
 
 import * as React from 'react';
@@ -15,9 +14,10 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Carousel,
   CarouselContent,
@@ -25,89 +25,16 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from '@/components/ui/carousel';
-import { User, Phone, ArrowLeft, Trash2 } from 'lucide-react'; // Added Trash2 icon
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { User, Phone, ArrowLeft } from 'lucide-react'; // Removed Trash2 icon
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc, getDoc, arrayRemove } from 'firebase/firestore';
+import { doc, updateDoc, getDoc } from 'firebase/firestore'; // Removed arrayRemove
 import { profileImages } from '@/config/profileImages'; // Import from config
 import type { UserAccount, Profile } from '@/types/user'; // Import shared types
 
-// Function to update a specific profile within the user's profiles array in Firestore
+// Function to update the specific profile within the user's profiles array in Firestore
 const updateUserProfile = async (mobile: string, profileId: string, data: Pick<Profile, 'name' | 'profileImageUrl' | 'profileImageName'>): Promise<{ success: boolean; message?: string; updatedAccount?: UserAccount }> => {
-  try {
-    const userDocRef = doc(db, 'users', mobile);
-    const userDocSnap = await getDoc(userDocRef);
-
-    if (!userDocSnap.exists()) {
-      return { success: false, message: "User account not found." };
-    }
-
-    const accountData = userDocSnap.data() as Omit<UserAccount, 'mobile'>; // Type cast without mobile
-    const profiles = accountData.profiles || [];
-    const profileIndex = profiles.findIndex(p => p.id === profileId);
-
-    if (profileIndex === -1) {
-        return { success: false, message: "Profile not found." };
-    }
-
-    const currentProfile = profiles[profileIndex];
-
-    // Check if there are actual changes
-    const hasChanges = currentProfile.name !== data.name ||
-                       currentProfile.profileImageUrl !== data.profileImageUrl ||
-                       currentProfile.profileImageName !== data.profileImageName;
-
-    if (!hasChanges) {
-        console.log("No changes detected for this profile, skipping Firestore update.");
-        // Return success with the potentially existing account data from snapshot (reconstructed)
-        const fullAccount: UserAccount = { mobile, ...accountData };
-        return { success: true, message: "No changes to save.", updatedAccount: fullAccount };
-    }
-
-    // Create the updated profiles array
-    const updatedProfiles = [
-        ...profiles.slice(0, profileIndex),
-        { ...currentProfile, ...data }, // Update the specific profile
-        ...profiles.slice(profileIndex + 1),
-    ];
-
-    // Update the entire profiles array in Firestore
-    await updateDoc(userDocRef, { profiles: updatedProfiles });
-    console.log("User profile updated in Firestore:", profileId);
-
-    // Construct the full updated user account to return
-    const updatedAccount: UserAccount = {
-        mobile,
-        password: accountData.password, // Keep password from original data
-        createdAt: accountData.createdAt,
-        profiles: updatedProfiles, // Use the updated profiles array
-    };
-
-    return { success: true, updatedAccount };
-
-  } catch (error) {
-    console.error("Error updating user profile in Firestore:", error);
-    return { success: false, message: "Profile update failed due to a server error." };
-  }
-};
-
-// Function to delete a profile from Firestore
-const deleteUserProfile = async (mobile: string, profileId: string): Promise<{ success: boolean; message?: string; updatedAccount?: UserAccount }> => {
-    if (profileId === 'kids') { // Prevent deleting Kids profile
-        return { success: false, message: "The Kids profile cannot be deleted." };
-    }
     try {
         const userDocRef = doc(db, 'users', mobile);
         const userDocSnap = await getDoc(userDocRef);
@@ -116,42 +43,54 @@ const deleteUserProfile = async (mobile: string, profileId: string): Promise<{ s
             return { success: false, message: "User account not found." };
         }
 
-        const accountData = userDocSnap.data() as Omit<UserAccount, 'mobile'>;
+        const accountData = userDocSnap.data() as Omit<UserAccount, 'mobile'>; // Type cast without mobile
         const profiles = accountData.profiles || [];
-        const profileToDelete = profiles.find(p => p.id === profileId);
+        const profileIndex = profiles.findIndex(p => p.id === profileId);
 
-        if (!profileToDelete) {
+        if (profileIndex === -1) {
             return { success: false, message: "Profile not found." };
         }
 
-        // Prevent deleting the last non-Kids profile
-        const nonKidsProfiles = profiles.filter(p => p.id !== 'kids');
-        if (nonKidsProfiles.length <= 1 && profileId !== 'kids') {
-             return { success: false, message: "Cannot delete the last profile." };
+        const currentProfile = profiles[profileIndex];
+
+        // Check if there are actual changes
+        const hasChanges = currentProfile.name !== data.name ||
+                           currentProfile.profileImageUrl !== data.profileImageUrl ||
+                           currentProfile.profileImageName !== data.profileImageName;
+
+        if (!hasChanges) {
+            console.log("No changes detected for this profile, skipping Firestore update.");
+            // Return success with the potentially existing account data from snapshot (reconstructed)
+            const fullAccount: UserAccount = { mobile, ...accountData };
+            return { success: true, message: "No changes to save.", updatedAccount: fullAccount };
         }
 
-        // Use arrayRemove to delete the profile object from the array
-        await updateDoc(userDocRef, {
-            profiles: arrayRemove(profileToDelete)
-        });
-        console.log("User profile deleted from Firestore:", profileId);
+        // Create the updated profiles array
+        const updatedProfiles = [
+            ...profiles.slice(0, profileIndex),
+            { ...currentProfile, ...data }, // Update the specific profile
+            ...profiles.slice(profileIndex + 1),
+        ];
 
-         // Construct the updated user account data to return
-         const updatedProfiles = profiles.filter(p => p.id !== profileId);
-         const updatedAccount: UserAccount = {
-             mobile,
-             password: accountData.password,
-             createdAt: accountData.createdAt,
-             profiles: updatedProfiles,
-         };
+        // Update the entire profiles array in Firestore
+        await updateDoc(userDocRef, { profiles: updatedProfiles });
+        console.log("User profile updated in Firestore:", profileId);
+
+        // Construct the full updated user account to return
+        const updatedAccount: UserAccount = {
+            mobile,
+            password: accountData.password, // Keep password from original data
+            createdAt: accountData.createdAt,
+            profiles: updatedProfiles, // Use the updated profiles array
+        };
 
         return { success: true, updatedAccount };
+
     } catch (error) {
-        console.error("Error deleting user profile in Firestore:", error);
-        return { success: false, message: "Profile deletion failed due to a server error." };
+        console.error("Error updating user profile in Firestore:", error);
+        return { success: false, message: "Profile update failed due to a server error." };
     }
 };
-
 
 // Form Schema - Mobile is not part of the schema as it's not editable
 const FormSchema = z.object({
@@ -167,7 +106,6 @@ export default function EditProfilePage() {
   const profileId = searchParams.get('profileId'); // Get profileId from query params
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
-  const [isDeleting, setIsDeleting] = React.useState(false);
   const [currentUserAccount, setCurrentUserAccount] = React.useState<UserAccount | null>(null);
   const [profileToEdit, setProfileToEdit] = React.useState<Profile | null>(null);
   const [selectedImageUrl, setSelectedImageUrl] = React.useState<string | null>(null);
@@ -180,8 +118,8 @@ export default function EditProfilePage() {
     },
   });
 
- // Load current user account and find the profile to edit
- React.useEffect(() => {
+  // Load current user account and find the profile to edit
+  React.useEffect(() => {
     let isMounted = true;
 
     const loadData = () => {
@@ -332,59 +270,9 @@ export default function EditProfilePage() {
     }
   }
 
-  const handleDelete = async () => {
-      if (!currentUserAccount || !currentUserAccount.mobile || !profileId || profileId === 'kids') {
-          toast({ title: "Error", description: "Cannot delete this profile or user info missing.", variant: "destructive" });
-          return;
-      }
-
-      // Check if it's the last non-kids profile
-      const nonKidsProfiles = currentUserAccount.profiles.filter(p => p.id !== 'kids');
-      if (nonKidsProfiles.length <= 1 && profileId !== 'kids') {
-           toast({ title: "Cannot Delete", description: "You cannot delete the last profile.", variant: "destructive" });
-           return;
-      }
-
-
-      setIsDeleting(true);
-      try {
-          const { success, message, updatedAccount } = await deleteUserProfile(currentUserAccount.mobile, profileId);
-          if (success && updatedAccount) {
-              toast({ title: "Profile Deleted", description: "The profile has been removed." });
-               // Update localStorage
-               const { password: _, ...accountToStore } = updatedAccount;
-               localStorage.setItem('userAccount', JSON.stringify(accountToStore));
-               // If the deleted profile was the selected one, clear it
-                const selectedProfileRaw = localStorage.getItem('selectedProfile');
-               if(selectedProfileRaw) {
-                   try {
-                       const selected = JSON.parse(selectedProfileRaw);
-                       if(selected.id === profileId) {
-                            localStorage.removeItem('selectedProfile');
-                       }
-                   } catch (e) {
-                        console.error("Error clearing selected profile after deletion", e);
-                        localStorage.removeItem('selectedProfile');
-                   }
-               }
-              router.push('/profile'); // Redirect to profile selection
-          } else {
-              toast({ title: "Deletion Failed", description: message || "Could not delete profile.", variant: "destructive" });
-              setIsDeleting(false);
-          }
-      } catch (error) {
-          console.error("Profile deletion error:", error);
-          toast({ title: "Error", description: "An error occurred during deletion.", variant: "destructive" });
-          setIsDeleting(false);
-      }
-  };
-
   if (!currentUserAccount || !profileToEdit) {
      return <div className="flex min-h-screen items-center justify-center">Loading profile editor...</div>;
   }
-
-   // Cannot delete the last profile (excluding Kids)
-   const canDelete = currentUserAccount.profiles.filter(p => p.id !== 'kids').length > 1 && profileId !== 'kids';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -400,36 +288,8 @@ export default function EditProfilePage() {
                     Update avatar and name for '{profileToEdit.name}'.
                 </CardDescription>
             </div>
-            <div className="w-10"> {/* Spacer to balance the back button, account for delete button */}
-             {canDelete && (
-                 <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" disabled={isDeleting || isLoading}>
-                            <Trash2 className="h-5 w-5" />
-                        </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                        <AlertDialogHeader>
-                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            This action cannot be undone. This will permanently delete the profile
-                            '{profileToEdit.name}'.
-                        </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={handleDelete}
-                            disabled={isDeleting}
-                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        >
-                           {isDeleting ? 'Deleting...' : 'Delete Profile'}
-                        </AlertDialogAction>
-                        </AlertDialogFooter>
-                    </AlertDialogContent>
-                 </AlertDialog>
-             )}
-            </div>
+             <div className="w-10"> {/* Spacer to balance the back button */}
+             </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -489,7 +349,7 @@ export default function EditProfilePage() {
                     <FormControl>
                        <div className="relative">
                         <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input placeholder="Enter profile name" {...field} className="pl-10" disabled={isLoading || isDeleting}/>
+                        <Input placeholder="Enter profile name" {...field} className="pl-10" disabled={isLoading}/>
                        </div>
                     </FormControl>
                     <FormMessage />
@@ -515,7 +375,7 @@ export default function EditProfilePage() {
                  <FormDescription>Mobile number cannot be changed.</FormDescription>
               </FormItem>
 
-              <Button type="submit" className="w-full" disabled={isLoading || isDeleting}>
+              <Button type="submit" className="w-full" disabled={isLoading}>
                  {isLoading ? 'Saving Changes...' : 'Save Changes'}
               </Button>
             </form>
