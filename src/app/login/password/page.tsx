@@ -101,10 +101,10 @@ export default function PasswordPage() {
              if (typeof window !== 'undefined') {
                localStorage.setItem('userData', JSON.stringify(userData));
                localStorage.removeItem('pendingMobile'); // Clean up temp storage
+               // Redirect to external URL after successful login
+               window.location.href = 'http://abc.xyz';
              }
-             // Redirect to profile page after successful login
-             router.push('/profile');
-             // Original external redirect: window.location.href = 'http://abc.xyz';
+             // Note: router.push('/profile') is replaced by the external redirect above.
         } else {
              toast({
                 title: "Login Failed",
