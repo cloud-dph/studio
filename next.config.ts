@@ -16,6 +16,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      { // Add Hotstar domain
+        protocol: 'https',
+        hostname: 'img1.hotstarext.com',
+        port: '',
+        pathname: '/**',
+      },
     ],
   },
 };
