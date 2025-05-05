@@ -94,6 +94,27 @@ export default function SignupPage() {
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
   const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
+  const [isCheckingAuth, setIsCheckingAuth] = React.useState(true); // State to manage auth check
+
+  // Check if user is already logged in
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedData = localStorage.getItem('userData');
+      if (storedData) {
+         try {
+            const parsedData = JSON.parse(storedData);
+            if (parsedData && parsedData.mobile) {
+                router.replace('/profile'); // Already logged in, redirect to profile
+                return; // Exit early
+            }
+         } catch (e) {
+            console.error("Error parsing user data on signup page", e);
+            localStorage.removeItem('userData'); // Clear corrupted data
+         }
+      }
+      setIsCheckingAuth(false); // Finished checking, user is not logged in
+    }
+  }, [router]);
 
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -186,6 +207,12 @@ export default function SignupPage() {
     }
   }
 
+   // Show loading indicator while checking auth status
+  if (isCheckingAuth) {
+      return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
+  }
+
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-lg shadow-lg">
@@ -277,11 +304,14 @@ export default function SignupPage() {
                           placeholder="Enter your 10-digit mobile number"
                           className="pl-10"
                           {...field}
-                          disabled={isLoading} // Ensure mobile is not editable if pre-filled and user exists check was done
+                          disabled={isLoading || !!initialMobile || !!(typeof window !== 'undefined' && localStorage.getItem('pendingMobile'))} // Disable if mobile is pre-filled
                         />
                       </div>
                     </FormControl>
                     <FormMessage />
+                     { (initialMobile || (typeof window !== 'undefined' && localStorage.getItem('pendingMobile'))) &&
+                       <FormDescription>Mobile number provided from previous step.</FormDescription>
+                     }
                   </FormItem>
                 )}
               />

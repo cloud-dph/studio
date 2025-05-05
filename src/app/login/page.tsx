@@ -45,6 +45,28 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = React.useState(true); // State to manage auth check
+
+  // Check if user is already logged in
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedData = localStorage.getItem('userData');
+      if (storedData) {
+        try {
+          const parsedData = JSON.parse(storedData);
+          if (parsedData && parsedData.mobile) {
+            router.replace('/profile'); // Already logged in, redirect to profile
+            return; // Exit early
+          }
+        } catch (e) {
+           console.error("Error parsing user data on login page", e);
+           localStorage.removeItem('userData'); // Clear corrupted data
+        }
+      }
+       setIsCheckingAuth(false); // Finished checking, user is not logged in
+    }
+  }, [router]);
+
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -82,6 +104,12 @@ export default function LoginPage() {
     }
     // No need to setIsLoading(false) here as navigation occurs
   }
+
+  // Show loading indicator while checking auth status
+  if (isCheckingAuth) {
+      return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
+  }
+
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
