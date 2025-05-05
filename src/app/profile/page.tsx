@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -6,21 +7,30 @@ import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
-import { Pencil, LogOut, Plus, Baby } from 'lucide-react'; // Import Plus and Baby icons
+import { Pencil, LogOut, Plus, Baby } from 'lucide-react'; // Import icons
+import type { UserAccount, Profile } from '@/types/user'; // Import shared types
 
-interface UserData {
-  name: string;
-  mobile: string;
-  profileImageUrl: string;
-  profileImageName: string;
-}
+// Helper function to get the first letter of a name, handling potential emojis or multi-char graphemes
+const getInitials = (name: string) => {
+    if (!name) return 'P'; // Default fallback
+    // Use Array.from to handle multi-byte characters correctly
+    const firstChar = Array.from(name)[0];
+    return firstChar ? firstChar.toUpperCase() : 'P';
+};
+
+// Truncate long names for display under avatars
+const truncateName = (name: string, maxLength = 10) => { // Increased max length slightly
+    if (!name) return '';
+    const chars = Array.from(name); // Handle multi-byte characters
+    return chars.length > maxLength ? `${chars.slice(0, maxLength).join('')}...` : name;
+};
+
 
 export default function ProfilePage() {
   const router = useRouter();
   const { toast } = useToast();
-  const [userData, setUserData] = React.useState<UserData | null>(null);
+  const [userAccount, setUserAccount] = React.useState<Omit<UserAccount, 'password' | 'createdAt'> | null>(null); // Store only necessary client-side data
   const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
@@ -29,55 +39,61 @@ export default function ProfilePage() {
     const loadUserData = () => {
       if (typeof window !== 'undefined') {
         setIsLoading(true);
-        const storedData = localStorage.getItem('userData');
+        const storedData = localStorage.getItem('userAccount');
         if (storedData) {
           try {
-            const parsedData = JSON.parse(storedData);
-            if (parsedData && parsedData.name && parsedData.mobile && parsedData.profileImageUrl && parsedData.profileImageName) {
-               if (isMounted) setUserData(parsedData);
+            const parsedData: Omit<UserAccount, 'password'> = JSON.parse(storedData); // Parse without password
+            // Validate data structure
+            if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) {
+              if (isMounted) setUserAccount(parsedData);
             } else {
-              console.error("Incomplete user data found in localStorage.");
-              throw new Error("Incomplete user data found.");
+              console.error("Incomplete user account data found in localStorage.");
+              throw new Error("Incomplete user account data found.");
             }
           } catch (e) {
-            console.error("Failed to parse or validate user data from localStorage", e);
-             if (isMounted) {
-                 toast({
-                    title: "Session Error",
-                    description: "Could not load user data. Please log in again.",
-                    variant: "destructive",
-                 });
-                localStorage.removeItem('userData');
-                router.push('/login');
-             }
+            console.error("Failed to parse or validate user account data from localStorage", e);
+            if (isMounted) {
+              toast({
+                title: "Session Error",
+                description: "Could not load user data. Please log in again.",
+                variant: "destructive",
+              });
+              localStorage.removeItem('userAccount');
+              localStorage.removeItem('selectedProfile'); // Clear selected profile too
+              router.push('/login');
+            }
           } finally {
-             if (isMounted) setIsLoading(false);
+            if (isMounted) setIsLoading(false);
           }
         } else {
-           if (isMounted) {
+          if (isMounted) {
             toast({
               title: "Not Logged In",
-              description: "Please log in or sign up to view your profile.",
+              description: "Please log in or sign up to view profiles.",
               variant: "destructive",
             });
             router.push('/login');
           }
         }
       } else {
-         if (isMounted) setIsLoading(false);
+        if (isMounted) setIsLoading(false); // Not in browser environment
       }
     };
 
     loadUserData();
 
+    // Listen for changes in localStorage (e.g., after profile edit/add/delete)
     const handleStorageChange = (event: StorageEvent) => {
-        if (event.key === 'userData') {
-            console.log("Detected localStorage change for userData, reloading profile...");
-            loadUserData();
-        }
+      if (event.key === 'userAccount') {
+        console.log("Detected localStorage change for userAccount, reloading profiles...");
+        loadUserData(); // Reload data if account changes
+      }
+       if (event.key === 'selectedProfile' && event.newValue === null) {
+          // Optional: If selected profile is explicitly removed elsewhere, reload may be needed
+          // loadUserData();
+       }
     };
     window.addEventListener('storage', handleStorageChange);
-
 
     return () => {
       isMounted = false;
@@ -85,147 +101,88 @@ export default function ProfilePage() {
     };
   }, [router, toast]);
 
+  const handleProfileSelect = (profile: Profile) => {
+    if (typeof window !== 'undefined') {
+        localStorage.setItem('selectedProfile', JSON.stringify(profile));
+        toast({ title: `Switched to ${profile.name}`, description: "Redirecting..." });
+
+        if (profile.id === 'kids') {
+            // Redirect Kids profile to a specific URL
+            window.location.href = 'http://abc.xyz/kids'; // Updated Kids redirect URL
+        } else {
+            // Redirect regular profiles to the main site
+            window.location.href = 'http://abc.xyz';
+        }
+    }
+  };
+
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
-        localStorage.removeItem('userData');
-        localStorage.removeItem('pendingMobile');
-        toast({ title: "Logged Out", description: "You have been successfully logged out." });
-        router.push('/login');
+      localStorage.removeItem('userAccount');
+      localStorage.removeItem('selectedProfile');
+      localStorage.removeItem('pendingMobile');
+      toast({ title: "Logged Out", description: "You have been successfully logged out." });
+      router.push('/login');
     }
   };
 
-  const handleKidsProfileClick = () => {
-    if (typeof window !== 'undefined') {
-        window.location.href = 'http://coco.com';
-    }
-  }
-
-  const handleAddProfileClick = () => {
-     // Placeholder for future add profile functionality
-     toast({ title: "Info", description: "Add profile functionality not yet implemented." });
-  }
+  const handleManageProfiles = () => {
+    router.push('/profile/manage'); // Navigate to a new page for managing (editing/adding) profiles
+  };
 
   if (isLoading) {
-    return <div className="flex min-h-screen items-center justify-center">Loading profile...</div>;
+    return <div className="flex min-h-screen items-center justify-center">Loading profiles...</div>;
   }
 
-  if (!userData) {
-     return <div className="flex min-h-screen items-center justify-center">No profile data available. Redirecting...</div>;
+  if (!userAccount || !userAccount.profiles) {
+    return <div className="flex min-h-screen items-center justify-center">No profile data available. Redirecting...</div>;
   }
-
-  // Truncate long names for display under avatars
-  const truncateName = (name: string, maxLength = 8) => {
-    return name.length > maxLength ? `${name.substring(0, maxLength)}...` : name;
-  };
-
 
   return (
-    <div className="container mx-auto max-w-4xl py-8 px-4"> {/* Reduced top padding */}
-      {/* Top Section: User Info and Actions */}
-      <Card className="w-full shadow-md overflow-hidden rounded-lg border border-border mb-8">
-        <CardHeader className="bg-card p-4 sm:p-6 border-b border-border">
-           <div className="flex flex-col sm:flex-row items-center gap-4">
-             {/* Main User Avatar */}
-             <Avatar className="h-16 w-16 sm:h-20 sm:w-20 border-2 border-primary ring-2 ring-primary/30 ring-offset-2 ring-offset-background">
-                <AvatarImage src={userData.profileImageUrl} alt={userData.profileImageName || 'User Avatar'} data-ai-hint="user avatar"/>
-                <AvatarFallback className="text-xl sm:text-2xl font-semibold">
-                    {userData.name?.charAt(0).toUpperCase() || 'U'}
-                </AvatarFallback>
-            </Avatar>
-             <div className="text-center sm:text-left flex-grow">
-                <CardTitle className="text-2xl sm:text-3xl font-bold text-foreground">{userData.name}</CardTitle>
-                <CardDescription className="text-muted-foreground mt-1 text-sm sm:text-base">
-                    Mobile: {userData.mobile}
-                </CardDescription>
-            </div>
-            {/* Action Buttons */}
-            <div className="flex flex-row sm:flex-col md:flex-row gap-2 mt-4 sm:mt-0 sm:ml-auto">
-                 <Button variant="outline" size="sm" onClick={() => router.push('/profile/edit')}>
-                    <Pencil className="mr-1.5 h-3.5 w-3.5" /> Edit Profile
-                </Button>
-                <Button onClick={handleLogout} variant="outline" size="sm" className="text-destructive border-destructive hover:bg-destructive/10">
-                   <LogOut className="mr-1.5 h-3.5 w-3.5" /> Logout
-                </Button>
-            </div>
-           </div>
-        </CardHeader>
-        {/* Can add subscription details or other info in CardContent if needed */}
-        {/* <CardContent className="p-4 sm:p-6">
-           <p className="text-sm text-muted-foreground">Additional account details...</p>
-        </CardContent> */}
-      </Card>
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-4">
+        <div className="w-full max-w-3xl text-center">
+             <h1 className="text-3xl sm:text-4xl font-bold text-foreground mb-8">Who's Watching?</h1>
 
-      {/* Profiles Section */}
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl sm:text-2xl font-semibold text-foreground">Profiles</h2>
-            <Button variant="ghost" size="sm" onClick={() => router.push('/profile/edit')}> {/* Reuse edit profile link */}
-                 <Pencil className="mr-1.5 h-4 w-4" /> Edit
+             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 sm:gap-6 mb-10">
+                {/* Display existing profiles */}
+                {userAccount.profiles.map((profile) => (
+                    <div
+                        key={profile.id}
+                        className="flex flex-col items-center text-center cursor-pointer group"
+                        onClick={() => handleProfileSelect(profile)}
+                    >
+                        <Avatar className="h-20 w-20 sm:h-24 sm:w-24 md:h-28 md:w-28 border-4 border-transparent group-hover:border-primary transition-colors duration-200 ease-in-out">
+                            <AvatarImage src={profile.profileImageUrl} alt={profile.profileImageName} data-ai-hint="user avatar"/>
+                            <AvatarFallback className="text-3xl sm:text-4xl font-semibold bg-muted">
+                                {profile.id === 'kids' ? <Baby className="h-10 w-10 sm:h-12 sm:w-12 text-primary"/> : getInitials(profile.name)}
+                            </AvatarFallback>
+                        </Avatar>
+                        <p className="mt-2 text-sm sm:text-base text-foreground w-full px-1">{truncateName(profile.name)}</p>
+                    </div>
+                ))}
+
+                 {/* Add Profile Button */}
+                 <div
+                    className="flex flex-col items-center text-center cursor-pointer group"
+                    onClick={handleManageProfiles} // Link to manage profiles page
+                 >
+                     <Avatar className="h-20 w-20 sm:h-24 sm:w-24 md:h-28 md:w-28 border-4 border-transparent group-hover:border-muted-foreground transition-colors duration-200 ease-in-out flex items-center justify-center bg-muted/30 hover:bg-muted/50">
+                         <Plus className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground group-hover:text-foreground" />
+                     </Avatar>
+                    <p className="mt-2 text-sm sm:text-base text-foreground">Add Profile</p>
+                 </div>
+
+             </div>
+
+             <Button variant="outline" onClick={handleManageProfiles} className="mb-4">
+                <Pencil className="mr-2 h-4 w-4" /> Manage Profiles
             </Button>
-        </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 sm:gap-6">
-            {/* Current User Profile */}
-            <div className="flex flex-col items-center text-center cursor-pointer group" onClick={() => toast({title: `Selected: ${userData.name}`})}>
-                 <Avatar className="h-16 w-16 sm:h-20 sm:w-20 border-2 border-transparent group-hover:border-primary transition-colors">
-                    <AvatarImage src={userData.profileImageUrl} alt={userData.profileImageName} data-ai-hint="user avatar"/>
-                    <AvatarFallback className="text-xl sm:text-2xl">
-                        {userData.name?.charAt(0).toUpperCase()}
-                    </AvatarFallback>
-                </Avatar>
-                <p className="mt-2 text-sm text-foreground truncate w-full">{truncateName(userData.name)}</p>
-            </div>
-
-            {/* Kids Profile */}
-             <div className="flex flex-col items-center text-center cursor-pointer group" onClick={handleKidsProfileClick}>
-                 <Avatar className="h-16 w-16 sm:h-20 sm:w-20 border-2 border-transparent group-hover:border-primary transition-colors bg-gradient-to-br from-purple-400 to-pink-500 flex items-center justify-center">
-                     {/* Using Baby icon as placeholder */}
-                    <Baby className="h-8 w-8 sm:h-10 sm:w-10 text-white" />
-                </Avatar>
-                <p className="mt-2 text-sm text-foreground">Kids</p>
-            </div>
-
-             {/* Add Profile */}
-            <div className="flex flex-col items-center text-center cursor-pointer group" onClick={handleAddProfileClick}>
-                <Avatar className="h-16 w-16 sm:h-20 sm:w-20 border-2 border-dashed border-muted-foreground/50 group-hover:border-primary transition-colors bg-muted/30 group-hover:bg-muted/50 flex items-center justify-center">
-                    <Plus className="h-8 w-8 sm:h-10 sm:w-10 text-muted-foreground group-hover:text-primary" />
-                </Avatar>
-                <p className="mt-2 text-sm text-foreground">Add</p>
-            </div>
-
-             {/* Placeholder for potential other profiles */}
-             {/* Add more profile items here if needed */}
+             <Button onClick={handleLogout} variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+               <LogOut className="mr-1.5 h-3.5 w-3.5" /> Logout from Account ({userAccount.mobile})
+            </Button>
 
         </div>
-      </div>
-
-      {/* Separator */}
-       <Separator className="my-8" />
-
-      {/* Placeholder for "Continue Watching" or other sections */}
-      <div>
-          <h2 className="text-xl sm:text-2xl font-semibold text-foreground mb-4">Continue Watching for {userData.name}</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-             {/* Placeholder cards - replace with actual content */}
-             {[1, 2, 3, 4].map((item) => (
-                 <Card key={item} className="overflow-hidden shadow">
-                    <Image
-                         src={`https://picsum.photos/300/170?random=${item}`}
-                         alt={`Placeholder ${item}`}
-                         width={300}
-                         height={170}
-                         className="w-full object-cover aspect-video"
-                         data-ai-hint="movie scene"
-                     />
-                     <CardContent className="p-3">
-                         <p className="text-sm font-medium truncate">Movie Title {item}</p>
-                         <p className="text-xs text-muted-foreground">1h 30m left</p>
-                     </CardContent>
-                 </Card>
-             ))}
-          </div>
-      </div>
-
     </div>
   );
 }

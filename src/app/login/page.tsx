@@ -2,7 +2,7 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation'; // Keep for internal routing if needed
+import { useRouter } from 'next/navigation'; // Use Next.js router
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -22,7 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase'; // Import Firestore instance
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
-// Check if user exists in Firestore
+// Check if user account exists in Firestore
 const checkUserExists = async (mobile: string): Promise<boolean> => {
   try {
     const userDocRef = doc(db, 'users', mobile); // Use mobile number as document ID
@@ -43,38 +43,41 @@ const FormSchema = z.object({
 });
 
 export default function LoginPage() {
-  const router = useRouter(); // Keep for navigation within the app (e.g., to signup/password)
+  const router = useRouter(); // Use Next.js router
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = React.useState(true); // State to manage auth check
 
-  // Check if user is already logged in
+  // Check if user is already logged in (has an account stored)
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedData = localStorage.getItem('userData');
+      const storedData = localStorage.getItem('userAccount'); // Check for userAccount
       let isLoggedIn = false;
       if (storedData) {
         try {
           const parsedData = JSON.parse(storedData);
-          if (parsedData && parsedData.mobile) {
-             isLoggedIn = true;
+          // Basic validation
+          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) {
+            isLoggedIn = true;
           } else {
-             localStorage.removeItem('userData'); // Clear invalid data
+            localStorage.removeItem('userAccount'); // Clear invalid data
+            localStorage.removeItem('selectedProfile'); // Also clear selected profile if account data is bad
           }
         } catch (e) {
-           console.error("Error parsing user data on login page", e);
-           localStorage.removeItem('userData'); // Clear corrupted data
+          console.error("Error parsing user account data on login page", e);
+          localStorage.removeItem('userAccount'); // Clear corrupted data
+          localStorage.removeItem('selectedProfile');
         }
       }
 
       if (isLoggedIn) {
-          // User is logged in, redirect to the external site
-          window.location.href = 'http://abc.xyz';
+        // User is logged in, redirect to profile selection page
+        router.push('/profile');
       } else {
-         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
+        setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
       }
     }
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, [router]); // Add router to dependency array
 
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -87,16 +90,17 @@ export default function LoginPage() {
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     setIsLoading(true);
     try {
-      // Store mobile number temporarily for other pages (optional, consider session management)
+      // Store mobile number temporarily for other pages
       if (typeof window !== 'undefined') {
         localStorage.setItem('pendingMobile', data.mobile);
       }
 
       const userExists = await checkUserExists(data.mobile);
       if (userExists) {
-        // Use router for internal navigation
+        // Use router for internal navigation to password page
         router.push(`/login/password?mobile=${data.mobile}`);
       } else {
+        // Use router for internal navigation to signup page
         router.push(`/signup?mobile=${data.mobile}`);
       }
     } catch (error) {

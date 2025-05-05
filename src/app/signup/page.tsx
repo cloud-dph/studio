@@ -2,11 +2,12 @@
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation'; // Keep for internal routing
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { v4 as uuidv4 } from 'uuid'; // For generating unique profile IDs
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -25,24 +26,16 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from '@/components/ui/carousel';
-import { Phone, Lock, User } from 'lucide-react';
+import { Phone, Lock, User, Baby } from 'lucide-react'; // Import Baby icon for Kids profile
 import { useToast } from "@/hooks/use-toast";
 import { cn } from '@/lib/utils';
-import { db } from '@/lib/firebase'; // Import Firestore instance
-import { doc, setDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
+import { db } from '@/lib/firebase';
+import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore'; // Import Timestamp
+import { profileImages, kidsProfileImage } from '@/config/profileImages'; // Import from config
+import type { UserAccount, Profile } from '@/types/user'; // Import shared types
 
-const profileImages = [
-  { id: '1', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/21.png', name: 'Avatar 1' },
-  { id: '2', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/2.png', name: 'Avatar 2' },
-  { id: '3', url: 'https://picsum.photos/200/200?random=1', name: 'Avatar 3', aiHint: 'abstract pattern' }, // Placeholder
-  { id: '4', url: 'https://picsum.photos/200/200?random=2', name: 'Avatar 4', aiHint: 'nature landscape' }, // Placeholder
-  { id: '5', url: 'https://picsum.photos/200/200?random=3', name: 'Avatar 5', aiHint: 'geometric shapes' }, // Placeholder
-];
-
-// Signup function to save user data to Firestore
-// WARNING: Storing plain text passwords is highly insecure!
-// In a real application, you MUST hash passwords securely (e.g., using bcrypt) before storing.
-const signupUser = async (data: any): Promise<{ success: boolean; message?: string; userData?: any }> => {
+// Signup function to save user account with initial profiles to Firestore
+const signupUser = async (data: z.infer<typeof FormSchema>, selectedImageData: { url: string, name: string }): Promise<{ success: boolean; message?: string; userAccount?: Omit<UserAccount, 'password'> }> => {
   try {
     const userDocRef = doc(db, 'users', data.mobile);
     const userDocSnap = await getDoc(userDocRef);
@@ -51,22 +44,36 @@ const signupUser = async (data: any): Promise<{ success: boolean; message?: stri
       return { success: false, message: "Mobile number already registered." };
     }
 
-    // Prepare data for Firestore (excluding profileImage ID, storing URL and name)
-    const userDataToSave = {
-      name: data.name,
-      mobile: data.mobile,
-      password: data.password, // INSECURE - HASH IN PRODUCTION
-      profileImageUrl: data.profileImageUrl,
-      profileImageName: data.profileImageName,
-      createdAt: new Date(), // Add a timestamp
+    // Create the first user profile
+    const initialProfile: Profile = {
+        id: uuidv4(), // Generate unique ID
+        name: data.name.trim(),
+        profileImageUrl: selectedImageData.url,
+        profileImageName: selectedImageData.name,
     };
 
-    await setDoc(userDocRef, userDataToSave);
-    console.log("User signed up and data saved to Firestore:", userDataToSave);
+    // Create the default Kids profile
+    const kidsProfile: Profile = {
+        id: 'kids', // Fixed ID for Kids profile
+        name: 'Kids',
+        profileImageUrl: kidsProfileImage.url, // Use the specific Kids avatar URL
+        profileImageName: kidsProfileImage.name,
+    };
 
-    // Don't return password to client
-    const { password: _, ...userDataForClient } = userDataToSave;
-    return { success: true, userData: userDataForClient };
+    // Prepare user account data for Firestore
+    const userAccountData: UserAccount = {
+      mobile: data.mobile,
+      password: data.password, // INSECURE - HASH IN PRODUCTION
+      profiles: [initialProfile, kidsProfile], // Add both profiles
+      createdAt: Timestamp.now(), // Use Firestore Timestamp for server-side timestamp
+    };
+
+    await setDoc(userDocRef, userAccountData);
+    console.log("User signed up and data saved to Firestore:", userAccountData.mobile);
+
+    // Prepare data to return to client (and store in localStorage) - excluding password
+    const { password: _, ...accountForClient } = userAccountData;
+    return { success: true, userAccount: accountForClient };
 
   } catch (error) {
     console.error("Error signing up user in Firestore:", error);
@@ -76,54 +83,56 @@ const signupUser = async (data: any): Promise<{ success: boolean; message?: stri
 
 
 const FormSchema = z.object({
-  name: z.string().min(2, {
-    message: 'Name must be at least 2 characters.',
-  }),
+  name: z.string().min(1, {
+    message: 'Name must be at least 1 character.',
+  }).max(20, {message: 'Name cannot exceed 20 characters.'}),
   mobile: z.string().regex(/^\d{10}$/, {
     message: 'Mobile number must be 10 digits.',
   }),
   password: z.string().min(6, {
     message: 'Password must be at least 6 characters.',
   }),
-  profileImage: z.string().min(1, { message: 'Please select a profile image.' }),
+  profileImage: z.string().min(1, { message: 'Please select a profile image.' }), // Represents selected image URL
 });
 
 export default function SignupPage() {
-  const router = useRouter(); // Keep for internal routing (e.g., back to login)
+  const router = useRouter();
   const searchParams = useSearchParams();
   const initialMobile = searchParams.get('mobile') || '';
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
-  const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
-  const [isCheckingAuth, setIsCheckingAuth] = React.useState(true); // State to manage auth check
+  const [selectedImageUrl, setSelectedImageUrl] = React.useState<string | null>(profileImages[0]?.url || null); // Default to first image URL
+  const [isCheckingAuth, setIsCheckingAuth] = React.useState(true);
 
   // Check if user is already logged in
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
-      const storedData = localStorage.getItem('userData');
+      const storedData = localStorage.getItem('userAccount');
       let isLoggedIn = false;
       if (storedData) {
          try {
             const parsedData = JSON.parse(storedData);
-            if (parsedData && parsedData.mobile) {
+            if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) {
                isLoggedIn = true;
             } else {
-               localStorage.removeItem('userData'); // Clear invalid data
+               localStorage.removeItem('userAccount');
+               localStorage.removeItem('selectedProfile');
             }
          } catch (e) {
-            console.error("Error parsing user data on signup page", e);
-            localStorage.removeItem('userData'); // Clear corrupted data
+            console.error("Error parsing user account data on signup page", e);
+            localStorage.removeItem('userAccount');
+            localStorage.removeItem('selectedProfile');
          }
       }
 
        if (isLoggedIn) {
-            // User is logged in, redirect to the external site
-            window.location.href = 'http://abc.xyz';
+            // User is logged in, redirect to profile selection
+            router.push('/profile');
        } else {
-         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
+         setIsCheckingAuth(false); // Finished checking, user is not logged in
        }
     }
-  }, []); // Empty dependency array ensures this runs only once on mount
+  }, [router]);
 
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -132,14 +141,13 @@ export default function SignupPage() {
       name: '',
       mobile: initialMobile,
       password: '',
-      profileImage: '',
+      profileImage: selectedImageUrl || '', // Use state for default
     },
   });
 
-   // Update mobile in form if query param changes
+   // Update mobile in form if query param changes or from localStorage
   React.useEffect(() => {
     let mobileToSet = initialMobile;
-    // Also check local storage if query param is missing
     if (!mobileToSet && typeof window !== 'undefined') {
       const storedMobile = localStorage.getItem('pendingMobile');
       if (storedMobile) {
@@ -147,59 +155,59 @@ export default function SignupPage() {
       }
     }
     if (mobileToSet) {
-       form.setValue('mobile', mobileToSet);
+       form.setValue('mobile', mobileToSet, { shouldValidate: true });
     }
-  }, [initialMobile, form]); // Rerun if initialMobile changes or form instance is new
+  }, [initialMobile, form]);
 
   React.useEffect(() => {
      form.register('profileImage'); // Ensure profileImage is registered
-  }, [form]);
+     // Set initial selected image URL if not already set
+     if (!selectedImageUrl && profileImages.length > 0) {
+         handleImageSelect(profileImages[0].url);
+     }
+  }, [form, selectedImageUrl]); // Added selectedImageUrl
 
 
-  const handleImageSelect = (imageId: string) => {
-    setSelectedImage(imageId);
-    form.setValue('profileImage', imageId, { shouldValidate: true });
-     form.clearErrors('profileImage'); // Clear error when selected
+  const handleImageSelect = (imageUrl: string) => {
+    setSelectedImageUrl(imageUrl);
+    form.setValue('profileImage', imageUrl, { shouldValidate: true });
+    form.clearErrors('profileImage');
   };
 
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    if (!selectedImage) {
+    if (!selectedImageUrl) {
         form.setError('profileImage', { type: 'manual', message: 'Please select a profile image.' });
         return;
     }
 
     setIsLoading(true);
 
-    const selectedImageData = profileImages.find(img => img.id === selectedImage);
+    const selectedImageData = profileImages.find(img => img.url === selectedImageUrl);
     if (!selectedImageData) {
         toast({ title: "Error", description: "Selected profile image not found.", variant: "destructive" });
         setIsLoading(false);
         return;
     }
 
-    const signupData = {
-        ...data,
-        profileImageUrl: selectedImageData.url, // Send the URL
-        profileImageName: selectedImageData.name, // Send the name
-    };
-
-
     try {
-        const { success, message, userData } = await signupUser(signupData);
-        if (success && userData) {
+        // Pass validated form data and selected image data to signup function
+        const { success, message, userAccount } = await signupUser(data, selectedImageData);
+
+        if (success && userAccount) {
             toast({
                 title: "Signup Successful",
                 description: "Your account has been created.",
             });
-            // Store user data in localStorage
+            // Store user account data (without password) in localStorage
              if (typeof window !== 'undefined') {
-               localStorage.setItem('userData', JSON.stringify(userData));
+               localStorage.setItem('userAccount', JSON.stringify(userAccount));
                localStorage.removeItem('pendingMobile'); // Clean up temp storage
-               // Redirect to external site after successful signup
-               window.location.href = 'http://abc.xyz';
+               localStorage.removeItem('selectedProfile'); // Ensure no selected profile initially
+
+               // Redirect to profile selection page after successful signup
+               router.push('/profile');
              }
-            // router.push('/profile'); // Replaced with external redirect
         } else {
              toast({
                 title: "Signup Failed",
@@ -217,7 +225,6 @@ export default function SignupPage() {
         });
         setIsLoading(false);
     }
-     // setIsLoading(false) handled in failure cases; success redirects
   }
 
    // Show loading indicator while checking auth status or redirecting
@@ -232,7 +239,7 @@ export default function SignupPage() {
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
            <CardDescription className="text-center text-muted-foreground">
-            Choose a profile picture and fill in your details.
+            Choose your first profile picture and fill in your details.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -245,31 +252,29 @@ export default function SignupPage() {
                   <FormItem className="flex flex-col items-center">
                     <FormLabel className="mb-2 text-center">Choose your Avatar</FormLabel>
                      <Carousel
-                      opts={{
-                        align: "start",
-                        loop: false, // Don't loop for selection
-                      }}
-                      className="w-full max-w-xs"
+                      opts={{ align: "start", loop: false }}
+                      className="w-full max-w-xs sm:max-w-sm md:max-w-md"
                     >
                       <CarouselContent>
                         {profileImages.map((image) => (
-                          <CarouselItem key={image.id} className="basis-1/3 md:basis-1/3">
+                          <CarouselItem key={image.url} className="basis-1/3 sm:basis-1/4 md:basis-1/5">
                             <div className="p-1">
                               <Card
                                 className={cn(
-                                    "cursor-pointer overflow-hidden transition-all",
-                                    selectedImage === image.id ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "ring-border hover:ring-primary/50"
+                                    "cursor-pointer overflow-hidden transition-all aspect-square",
+                                    selectedImageUrl === image.url ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "ring-border hover:ring-primary/50"
                                 )}
-                                onClick={() => handleImageSelect(image.id)}
+                                onClick={() => handleImageSelect(image.url)}
                               >
-                                <CardContent className="flex aspect-square items-center justify-center p-0">
+                                <CardContent className="flex items-center justify-center p-0 h-full w-full">
                                    <Image
                                     src={image.url}
                                     alt={image.name}
-                                    width={200}
-                                    height={200}
-                                    className="object-cover"
+                                    width={100}
+                                    height={100}
+                                    className="object-cover w-full h-full"
                                     data-ai-hint={image.aiHint}
+                                     unoptimized={image.url.includes('picsum')} // Avoid optimizing placeholder images
                                   />
                                 </CardContent>
                               </Card>
@@ -291,7 +296,7 @@ export default function SignupPage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>Your Name (for first profile)</FormLabel>
                     <FormControl>
                        <div className="relative">
                         <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -317,7 +322,7 @@ export default function SignupPage() {
                           placeholder="Enter your 10-digit mobile number"
                           className="pl-10"
                           {...field}
-                          // Disable if mobile is pre-filled from previous step (query param or localStorage)
+                          // Disable if mobile is pre-filled
                           disabled={isLoading || !!initialMobile || !!(typeof window !== 'undefined' && localStorage.getItem('pendingMobile'))}
                         />
                       </div>

@@ -2,6 +2,8 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
+// Analytics is not used currently, removed import
+// import { getAnalytics } from "firebase/analytics";
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
@@ -28,5 +30,6 @@ if (!getApps().length) {
 
 const db = getFirestore(app);
 const auth = getAuth(app); // Initialize Firebase Auth
+// const analytics = getAnalytics(app); // Analytics initialization removed as it's not used
 
 export { app, db, auth }; // Export auth as well

@@ -1,7 +1,8 @@
+
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -24,90 +25,152 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from '@/components/ui/carousel';
-import { User, Phone, ArrowLeft } from 'lucide-react';
+import { User, Phone, ArrowLeft, Trash2 } from 'lucide-react'; // Added Trash2 icon
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { db } from '@/lib/firebase';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, arrayRemove } from 'firebase/firestore';
+import { profileImages } from '@/config/profileImages'; // Import from config
+import type { UserAccount, Profile } from '@/types/user'; // Import shared types
 
-// Profile images - Should ideally be fetched or defined globally if used elsewhere
-const profileImages = [
-  { id: '1', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/21.png', name: 'Avatar 1' },
-  { id: '2', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/2.png', name: 'Avatar 2' },
-  { id: '3', url: 'https://picsum.photos/200/200?random=1', name: 'Avatar 3', aiHint: 'abstract pattern' },
-  { id: '4', url: 'https://picsum.photos/200/200?random=2', name: 'Avatar 4', aiHint: 'nature landscape' },
-  { id: '5', url: 'https://picsum.photos/200/200?random=3', name: 'Avatar 5', aiHint: 'geometric shapes' },
-];
-
-interface UserData {
-  name: string;
-  mobile: string;
-  profileImageUrl: string;
-  profileImageName: string;
-}
-
-// Function to update user data in Firestore
-const updateUser = async (mobile: string, data: Partial<Pick<UserData, 'name' | 'profileImageUrl' | 'profileImageName'>>): Promise<{ success: boolean; message?: string; updatedData?: UserData }> => {
+// Function to update a specific profile within the user's profiles array in Firestore
+const updateUserProfile = async (mobile: string, profileId: string, data: Pick<Profile, 'name' | 'profileImageUrl' | 'profileImageName'>): Promise<{ success: boolean; message?: string; updatedAccount?: UserAccount }> => {
   try {
     const userDocRef = doc(db, 'users', mobile);
     const userDocSnap = await getDoc(userDocRef);
 
     if (!userDocSnap.exists()) {
-      return { success: false, message: "User not found." };
+      return { success: false, message: "User account not found." };
     }
 
-    const existingData = userDocSnap.data() as UserData;
+    const accountData = userDocSnap.data() as Omit<UserAccount, 'mobile'>; // Type cast without mobile
+    const profiles = accountData.profiles || [];
+    const profileIndex = profiles.findIndex(p => p.id === profileId);
 
-    // Construct the data to be updated in Firestore
-    // Only include fields that are actually being passed in `data` and have changed
-    const firestoreUpdateData: Partial<Omit<UserData, 'mobile'>> = {};
-    if (data.name !== undefined && data.name !== existingData.name) {
-        firestoreUpdateData.name = data.name;
-    }
-    if (data.profileImageUrl !== undefined && data.profileImageUrl !== existingData.profileImageUrl) {
-        firestoreUpdateData.profileImageUrl = data.profileImageUrl;
-        // Always update name if URL changes, ensure data.profileImageName is passed
-        firestoreUpdateData.profileImageName = data.profileImageName ?? 'Avatar';
+    if (profileIndex === -1) {
+        return { success: false, message: "Profile not found." };
     }
 
+    const currentProfile = profiles[profileIndex];
 
-    // Only update if there are actual changes to send
-    if (Object.keys(firestoreUpdateData).length > 0) {
-         await updateDoc(userDocRef, firestoreUpdateData);
-         console.log("User data updated in Firestore:", firestoreUpdateData);
-    } else {
-        console.log("No changes detected, skipping Firestore update.");
-        // Still return success true if no changes, but with a specific message
-         return { success: true, message: "No changes to save.", updatedData: existingData };
+    // Check if there are actual changes
+    const hasChanges = currentProfile.name !== data.name ||
+                       currentProfile.profileImageUrl !== data.profileImageUrl ||
+                       currentProfile.profileImageName !== data.profileImageName;
+
+    if (!hasChanges) {
+        console.log("No changes detected for this profile, skipping Firestore update.");
+        // Return success with the potentially existing account data from snapshot (reconstructed)
+        const fullAccount: UserAccount = { mobile, ...accountData };
+        return { success: true, message: "No changes to save.", updatedAccount: fullAccount };
     }
 
-    // Construct the full updated user data to return and store locally
-    // Merge existing data with the changes that were sent to Firestore
-    const updatedUserData = { ...existingData, ...firestoreUpdateData, mobile }; // Ensure mobile is included
+    // Create the updated profiles array
+    const updatedProfiles = [
+        ...profiles.slice(0, profileIndex),
+        { ...currentProfile, ...data }, // Update the specific profile
+        ...profiles.slice(profileIndex + 1),
+    ];
 
-    return { success: true, updatedData: updatedUserData }; // Return the merged data
+    // Update the entire profiles array in Firestore
+    await updateDoc(userDocRef, { profiles: updatedProfiles });
+    console.log("User profile updated in Firestore:", profileId);
+
+    // Construct the full updated user account to return
+    const updatedAccount: UserAccount = {
+        mobile,
+        password: accountData.password, // Keep password from original data
+        createdAt: accountData.createdAt,
+        profiles: updatedProfiles, // Use the updated profiles array
+    };
+
+    return { success: true, updatedAccount };
 
   } catch (error) {
-    console.error("Error updating user in Firestore:", error);
+    console.error("Error updating user profile in Firestore:", error);
     return { success: false, message: "Profile update failed due to a server error." };
   }
+};
+
+// Function to delete a profile from Firestore
+const deleteUserProfile = async (mobile: string, profileId: string): Promise<{ success: boolean; message?: string; updatedAccount?: UserAccount }> => {
+    if (profileId === 'kids') { // Prevent deleting Kids profile
+        return { success: false, message: "The Kids profile cannot be deleted." };
+    }
+    try {
+        const userDocRef = doc(db, 'users', mobile);
+        const userDocSnap = await getDoc(userDocRef);
+
+        if (!userDocSnap.exists()) {
+            return { success: false, message: "User account not found." };
+        }
+
+        const accountData = userDocSnap.data() as Omit<UserAccount, 'mobile'>;
+        const profiles = accountData.profiles || [];
+        const profileToDelete = profiles.find(p => p.id === profileId);
+
+        if (!profileToDelete) {
+            return { success: false, message: "Profile not found." };
+        }
+
+        // Prevent deleting the last non-Kids profile
+        const nonKidsProfiles = profiles.filter(p => p.id !== 'kids');
+        if (nonKidsProfiles.length <= 1 && profileId !== 'kids') {
+             return { success: false, message: "Cannot delete the last profile." };
+        }
+
+        // Use arrayRemove to delete the profile object from the array
+        await updateDoc(userDocRef, {
+            profiles: arrayRemove(profileToDelete)
+        });
+        console.log("User profile deleted from Firestore:", profileId);
+
+         // Construct the updated user account data to return
+         const updatedProfiles = profiles.filter(p => p.id !== profileId);
+         const updatedAccount: UserAccount = {
+             mobile,
+             password: accountData.password,
+             createdAt: accountData.createdAt,
+             profiles: updatedProfiles,
+         };
+
+        return { success: true, updatedAccount };
+    } catch (error) {
+        console.error("Error deleting user profile in Firestore:", error);
+        return { success: false, message: "Profile deletion failed due to a server error." };
+    }
 };
 
 
 // Form Schema - Mobile is not part of the schema as it's not editable
 const FormSchema = z.object({
-  name: z.string().min(2, {
-    message: 'Name must be at least 2 characters.',
-  }),
-  profileImage: z.string().min(1, { message: 'Please select a profile image.' }), // Represents the selected image ID
+  name: z.string().min(1, { // Allow 1 character for names like 'A'
+    message: 'Name must be at least 1 character.',
+  }).max(20, { message: 'Name cannot exceed 20 characters.'}), // Add max length
+  profileImage: z.string().min(1, { message: 'Please select a profile image.' }), // Represents the selected image URL
 });
 
 export default function EditProfilePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const profileId = searchParams.get('profileId'); // Get profileId from query params
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
-  const [currentUserData, setCurrentUserData] = React.useState<UserData | null>(null);
-  const [selectedImage, setSelectedImage] = React.useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [currentUserAccount, setCurrentUserAccount] = React.useState<UserAccount | null>(null);
+  const [profileToEdit, setProfileToEdit] = React.useState<Profile | null>(null);
+  const [selectedImageUrl, setSelectedImageUrl] = React.useState<string | null>(null);
 
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
@@ -117,34 +180,57 @@ export default function EditProfilePage() {
     },
   });
 
- // Load current user data and initialize form
+ // Load current user account and find the profile to edit
  React.useEffect(() => {
-    let isMounted = true; // Flag to prevent state updates on unmounted component
+    let isMounted = true;
 
     const loadData = () => {
       if (typeof window !== 'undefined') {
-        const storedData = localStorage.getItem('userData');
+        const storedData = localStorage.getItem('userAccount');
         if (storedData) {
           try {
-            const parsedData: UserData = JSON.parse(storedData);
-            if (parsedData && parsedData.mobile) {
-              if (isMounted) {
-                setCurrentUserData(parsedData);
-                const currentImage = profileImages.find(img => img.url === parsedData.profileImageUrl);
-                const currentImageId = currentImage?.id || '';
-                form.reset({ // Use reset to update default values and form state
-                  name: parsedData.name,
-                  profileImage: currentImageId,
-                });
-                setSelectedImage(currentImageId); // Ensure selectedImage state matches
-              }
-            } else {
-              throw new Error("Invalid user data structure.");
+            const parsedAccount: Omit<UserAccount, 'password'> = JSON.parse(storedData);
+             if (parsedAccount && parsedAccount.mobile && Array.isArray(parsedAccount.profiles)) {
+               if (isMounted) {
+                 // Reconstruct UserAccount type for state (even without password)
+                 const accountForState: UserAccount = {
+                    ...parsedAccount,
+                    password: '', // Password not needed client-side for this
+                    createdAt: parsedAccount.createdAt || new Date() // Ensure createdAt exists
+                 };
+                 setCurrentUserAccount(accountForState);
+
+                 if (profileId) {
+                   const foundProfile = accountForState.profiles.find(p => p.id === profileId);
+                   if (foundProfile) {
+                     if (foundProfile.id === 'kids') {
+                       // Handle Kids profile specifically - maybe redirect or show different view
+                       toast({ title: "Info", description: "Kids profile editing is not available here.", variant: "default" });
+                       router.back(); // Go back if trying to edit Kids profile directly
+                       return;
+                     }
+                     setProfileToEdit(foundProfile);
+                     form.reset({
+                       name: foundProfile.name,
+                       profileImage: foundProfile.profileImageUrl,
+                     });
+                     setSelectedImageUrl(foundProfile.profileImageUrl);
+                   } else {
+                     throw new Error("Profile ID not found in user account.");
+                   }
+                 } else {
+                   throw new Error("Profile ID is missing from the URL.");
+                 }
+               }
+             } else {
+              throw new Error("Invalid user account structure.");
             }
           } catch (e) {
-            console.error("Failed to load user data for editing", e);
+            console.error("Failed to load user account for editing", e);
             if (isMounted) {
-                toast({ title: "Error", description: "Could not load profile data. Please log in again.", variant: "destructive" });
+                toast({ title: "Error", description: `Could not load profile data: ${e instanceof Error ? e.message : 'Unknown error'}. Please log in again.`, variant: "destructive" });
+                localStorage.removeItem('userAccount');
+                localStorage.removeItem('selectedProfile');
                 router.push('/login');
             }
           }
@@ -160,61 +246,73 @@ export default function EditProfilePage() {
     loadData();
 
     return () => {
-      isMounted = false; // Cleanup function sets flag to false
+      isMounted = false;
     };
-  }, [router, toast, form]); // form added to dependency array for reset
+  }, [router, toast, form, profileId]); // Added profileId
 
 
-  const handleImageSelect = (imageId: string) => {
-    setSelectedImage(imageId);
-    form.setValue('profileImage', imageId, { shouldValidate: true });
+  const handleImageSelect = (imageUrl: string) => {
+    setSelectedImageUrl(imageUrl);
+    form.setValue('profileImage', imageUrl, { shouldValidate: true });
     form.clearErrors('profileImage');
   };
 
   async function onSubmit(data: z.infer<typeof FormSchema>) {
-    if (!currentUserData || !currentUserData.mobile) {
-      toast({ title: "Error", description: "User information is missing.", variant: "destructive" });
+    if (!currentUserAccount || !currentUserAccount.mobile || !profileToEdit || !profileId) {
+      toast({ title: "Error", description: "User or profile information is missing.", variant: "destructive" });
       return;
     }
-    if (!selectedImage) {
+    if (!selectedImageUrl) {
         form.setError('profileImage', { type: 'manual', message: 'Please select a profile image.' });
         return;
     }
 
     setIsLoading(true);
 
-    const selectedImageData = profileImages.find(img => img.id === selectedImage);
-    if (!selectedImageData) {
-        toast({ title: "Error", description: "Selected profile image not found.", variant: "destructive" });
-        setIsLoading(false);
-        return;
-    }
+    const selectedImageData = profileImages.find(img => img.url === selectedImageUrl);
+    const profileImageName = selectedImageData?.name || profileToEdit.profileImageName || 'Avatar'; // Fallback to current name
 
-    // Prepare data for the updateUser function
-    const updateData: Partial<Pick<UserData, 'name' | 'profileImageUrl' | 'profileImageName'>> = {
-        name: data.name,
-        profileImageUrl: selectedImageData.url,
-        profileImageName: selectedImageData.name, // Include the name associated with the selected image
+    // Prepare data for the updateUserProfile function
+    const updateData: Pick<Profile, 'name' | 'profileImageUrl' | 'profileImageName'> = {
+        name: data.name.trim(), // Trim name input
+        profileImageUrl: selectedImageUrl,
+        profileImageName: profileImageName,
     };
 
     try {
-        const { success, message, updatedData } = await updateUser(currentUserData.mobile, updateData);
+        const { success, message, updatedAccount } = await updateUserProfile(currentUserAccount.mobile, profileId, updateData);
 
-        if (success && updatedData) {
+        if (success && updatedAccount) {
              toast({
                 title: message === "No changes to save." ? "No Changes" : "Profile Updated",
                 description: message || "Your profile has been successfully updated.",
             });
-            // Update localStorage ONLY if there was an actual update or initial load
+            // Update localStorage ONLY if there was an actual update
             if (message !== "No changes to save." && typeof window !== 'undefined') {
-               localStorage.setItem('userData', JSON.stringify(updatedData));
+               // Remove password before saving to localStorage
+               const { password: _, ...accountToStore } = updatedAccount;
+               localStorage.setItem('userAccount', JSON.stringify(accountToStore));
+               // Check if the currently selected profile was the one edited
+               const selectedProfileRaw = localStorage.getItem('selectedProfile');
+               if(selectedProfileRaw) {
+                   try {
+                       const selected = JSON.parse(selectedProfileRaw);
+                       if(selected.id === profileId) {
+                           // Update selected profile in localStorage as well
+                           const updatedSelectedProfile = updatedAccount.profiles.find(p => p.id === profileId);
+                           if(updatedSelectedProfile) {
+                                localStorage.setItem('selectedProfile', JSON.stringify(updatedSelectedProfile));
+                           } else {
+                               localStorage.removeItem('selectedProfile'); // Should not happen if update was successful
+                           }
+                       }
+                   } catch (e) {
+                        console.error("Error updating selected profile in localStorage", e);
+                        localStorage.removeItem('selectedProfile');
+                   }
+               }
             }
-            // Only redirect if changes were made or it wasn't the "no changes" case
-            if (message !== "No changes to save.") {
-                 router.push('/profile'); // Redirect back to profile view
-            } else {
-                 setIsLoading(false); // Stop loading if no changes were made
-            }
+             router.push('/profile'); // Redirect back to profile selection view
         } else {
              toast({
                 title: "Update Failed",
@@ -232,12 +330,61 @@ export default function EditProfilePage() {
         });
         setIsLoading(false);
     }
-     // setIsLoading(false) is handled within the try/catch/finally blocks now
   }
 
-  if (!currentUserData) {
-     return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
+  const handleDelete = async () => {
+      if (!currentUserAccount || !currentUserAccount.mobile || !profileId || profileId === 'kids') {
+          toast({ title: "Error", description: "Cannot delete this profile or user info missing.", variant: "destructive" });
+          return;
+      }
+
+      // Check if it's the last non-kids profile
+      const nonKidsProfiles = currentUserAccount.profiles.filter(p => p.id !== 'kids');
+      if (nonKidsProfiles.length <= 1 && profileId !== 'kids') {
+           toast({ title: "Cannot Delete", description: "You cannot delete the last profile.", variant: "destructive" });
+           return;
+      }
+
+
+      setIsDeleting(true);
+      try {
+          const { success, message, updatedAccount } = await deleteUserProfile(currentUserAccount.mobile, profileId);
+          if (success && updatedAccount) {
+              toast({ title: "Profile Deleted", description: "The profile has been removed." });
+               // Update localStorage
+               const { password: _, ...accountToStore } = updatedAccount;
+               localStorage.setItem('userAccount', JSON.stringify(accountToStore));
+               // If the deleted profile was the selected one, clear it
+                const selectedProfileRaw = localStorage.getItem('selectedProfile');
+               if(selectedProfileRaw) {
+                   try {
+                       const selected = JSON.parse(selectedProfileRaw);
+                       if(selected.id === profileId) {
+                            localStorage.removeItem('selectedProfile');
+                       }
+                   } catch (e) {
+                        console.error("Error clearing selected profile after deletion", e);
+                        localStorage.removeItem('selectedProfile');
+                   }
+               }
+              router.push('/profile'); // Redirect to profile selection
+          } else {
+              toast({ title: "Deletion Failed", description: message || "Could not delete profile.", variant: "destructive" });
+              setIsDeleting(false);
+          }
+      } catch (error) {
+          console.error("Profile deletion error:", error);
+          toast({ title: "Error", description: "An error occurred during deletion.", variant: "destructive" });
+          setIsDeleting(false);
+      }
+  };
+
+  if (!currentUserAccount || !profileToEdit) {
+     return <div className="flex min-h-screen items-center justify-center">Loading profile editor...</div>;
   }
+
+   // Cannot delete the last profile (excluding Kids)
+   const canDelete = currentUserAccount.profiles.filter(p => p.id !== 'kids').length > 1 && profileId !== 'kids';
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
@@ -250,10 +397,39 @@ export default function EditProfilePage() {
             <div className="flex-grow text-center">
                 <CardTitle className="text-2xl font-bold">Edit Profile</CardTitle>
                 <CardDescription className="text-muted-foreground">
-                    Update your avatar and name.
+                    Update avatar and name for '{profileToEdit.name}'.
                 </CardDescription>
             </div>
-            <div className="w-8"></div> {/* Spacer to balance the back button */}
+            <div className="w-10"> {/* Spacer to balance the back button, account for delete button */}
+             {canDelete && (
+                 <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:bg-destructive/10" disabled={isDeleting || isLoading}>
+                            <Trash2 className="h-5 w-5" />
+                        </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                        <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete the profile
+                            '{profileToEdit.name}'.
+                        </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            disabled={isDeleting}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                           {isDeleting ? 'Deleting...' : 'Delete Profile'}
+                        </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                 </AlertDialog>
+             )}
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -267,27 +443,28 @@ export default function EditProfilePage() {
                     <FormLabel className="mb-2 text-center">Choose your Avatar</FormLabel>
                      <Carousel
                       opts={{ align: "start", loop: false }}
-                      className="w-full max-w-xs"
+                      className="w-full max-w-xs sm:max-w-sm md:max-w-md" // Adjust width for responsiveness
                     >
                       <CarouselContent>
                         {profileImages.map((image) => (
-                          <CarouselItem key={image.id} className="basis-1/3">
+                          <CarouselItem key={image.url} className="basis-1/3 sm:basis-1/4 md:basis-1/5"> {/* Adjust basis */}
                             <div className="p-1">
                               <Card
                                 className={cn(
-                                    "cursor-pointer overflow-hidden transition-all",
-                                    selectedImage === image.id ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "ring-border hover:ring-primary/50"
+                                    "cursor-pointer overflow-hidden transition-all aspect-square", // Ensure square aspect ratio
+                                    selectedImageUrl === image.url ? "ring-2 ring-primary ring-offset-2 ring-offset-background" : "ring-border hover:ring-primary/50"
                                 )}
-                                onClick={() => handleImageSelect(image.id)}
+                                onClick={() => handleImageSelect(image.url)}
                               >
-                                <CardContent className="flex aspect-square items-center justify-center p-0">
+                                <CardContent className="flex items-center justify-center p-0 h-full w-full">
                                    <Image
                                     src={image.url}
                                     alt={image.name}
-                                    width={200}
-                                    height={200}
-                                    className="object-cover"
+                                    width={100} // Smaller base size for carousel items
+                                    height={100}
+                                    className="object-cover w-full h-full" // Cover the container
                                     data-ai-hint={image.aiHint}
+                                    unoptimized={image.url.includes('picsum')} // Avoid optimizing placeholder images
                                   />
                                 </CardContent>
                               </Card>
@@ -308,11 +485,11 @@ export default function EditProfilePage() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>Profile Name</FormLabel>
                     <FormControl>
                        <div className="relative">
                         <User className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                        <Input placeholder="Enter your name" {...field} className="pl-10" disabled={isLoading}/>
+                        <Input placeholder="Enter profile name" {...field} className="pl-10" disabled={isLoading || isDeleting}/>
                        </div>
                     </FormControl>
                     <FormMessage />
@@ -322,13 +499,13 @@ export default function EditProfilePage() {
 
              {/* Display Mobile Number (Read-only) */}
               <FormItem>
-                 <FormLabel>Mobile Number</FormLabel>
+                 <FormLabel>Account Mobile Number</FormLabel>
                  <FormControl>
                      <div className="relative">
                         <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                         <Input
                             type="tel"
-                            value={currentUserData.mobile}
+                            value={currentUserAccount.mobile}
                             className="pl-10 text-muted-foreground"
                             readOnly
                             disabled // Visually indicate it's not editable
@@ -338,7 +515,7 @@ export default function EditProfilePage() {
                  <FormDescription>Mobile number cannot be changed.</FormDescription>
               </FormItem>
 
-              <Button type="submit" className="w-full" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading || isDeleting}>
                  {isLoading ? 'Saving Changes...' : 'Save Changes'}
               </Button>
             </form>
