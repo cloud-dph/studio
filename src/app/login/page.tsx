@@ -18,13 +18,20 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Phone } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { db } from '@/lib/firebase'; // Import Firestore instance
+import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
-// Mock check if user exists - replace with actual API call
+// Check if user exists in Firestore
 const checkUserExists = async (mobile: string): Promise<boolean> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  // Simple check (e.g., if mobile number ends with '123')
-  return mobile.endsWith('123');
+  try {
+    const userDocRef = doc(db, 'users', mobile); // Use mobile number as document ID
+    const userDocSnap = await getDoc(userDocRef);
+    return userDocSnap.exists();
+  } catch (error) {
+    console.error("Error checking user existence in Firestore:", error);
+    // Handle error appropriately, maybe re-throw or return false
+    throw new Error("Failed to check user existence.");
+  }
 };
 
 
@@ -49,6 +56,11 @@ export default function LoginPage() {
   async function onSubmit(data: z.infer<typeof FormSchema>) {
     setIsLoading(true);
     try {
+      // Store mobile number temporarily for other pages (optional, consider session management)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('pendingMobile', data.mobile);
+      }
+
       const userExists = await checkUserExists(data.mobile);
       if (userExists) {
         router.push(`/login/password?mobile=${data.mobile}`);
@@ -59,10 +71,14 @@ export default function LoginPage() {
       console.error("Error checking user:", error);
       toast({
         title: "Error",
-        description: "Could not verify mobile number. Please try again.",
+        description: error instanceof Error ? error.message : "Could not verify mobile number. Please try again.",
         variant: "destructive",
       });
       setIsLoading(false);
+      // Clear temporary mobile number on error
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('pendingMobile');
+      }
     }
     // No need to setIsLoading(false) here as navigation occurs
   }

@@ -27,6 +27,8 @@ import {
 import { Phone, Lock, User } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { cn } from '@/lib/utils';
+import { db } from '@/lib/firebase'; // Import Firestore instance
+import { doc, setDoc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
 const profileImages = [
   { id: '1', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/21.png', name: 'Avatar 1' },
@@ -36,13 +38,39 @@ const profileImages = [
   { id: '5', url: 'https://picsum.photos/200/200?random=3', name: 'Avatar 5', aiHint: 'geometric shapes' }, // Placeholder
 ];
 
-// Mock signup function - replace with actual API call
-const signupUser = async (data: any): Promise<boolean> => {
-   // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  console.log("Signing up user:", data);
-  // Assume signup is always successful for demo
-  return true;
+// Signup function to save user data to Firestore
+// WARNING: Storing plain text passwords is highly insecure!
+// In a real application, you MUST hash passwords securely (e.g., using bcrypt) before storing.
+const signupUser = async (data: any): Promise<{ success: boolean; message?: string; userData?: any }> => {
+  try {
+    const userDocRef = doc(db, 'users', data.mobile);
+    const userDocSnap = await getDoc(userDocRef);
+
+    if (userDocSnap.exists()) {
+      return { success: false, message: "Mobile number already registered." };
+    }
+
+    // Prepare data for Firestore (excluding profileImage ID, storing URL and name)
+    const userDataToSave = {
+      name: data.name,
+      mobile: data.mobile,
+      password: data.password, // INSECURE - HASH IN PRODUCTION
+      profileImageUrl: data.profileImageUrl,
+      profileImageName: data.profileImageName,
+      createdAt: new Date(), // Add a timestamp
+    };
+
+    await setDoc(userDocRef, userDataToSave);
+    console.log("User signed up and data saved to Firestore:", userDataToSave);
+
+    // Don't return password to client
+    const { password: _, ...userDataForClient } = userDataToSave;
+    return { success: true, userData: userDataForClient };
+
+  } catch (error) {
+    console.error("Error signing up user in Firestore:", error);
+    return { success: false, message: "Signup failed due to a server error." };
+  }
 };
 
 
@@ -83,6 +111,13 @@ export default function SignupPage() {
     if (initialMobile) {
       form.setValue('mobile', initialMobile);
     }
+     // Also check local storage if query param is missing
+    else if (typeof window !== 'undefined') {
+      const storedMobile = localStorage.getItem('pendingMobile');
+      if (storedMobile) {
+          form.setValue('mobile', storedMobile);
+      }
+    }
   }, [initialMobile, form]);
 
   React.useEffect(() => {
@@ -106,33 +141,36 @@ export default function SignupPage() {
     setIsLoading(true);
 
     const selectedImageData = profileImages.find(img => img.id === selectedImage);
+    if (!selectedImageData) {
+        toast({ title: "Error", description: "Selected profile image not found.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+    }
 
     const signupData = {
         ...data,
-        profileImageUrl: selectedImageData?.url, // Send the URL
+        profileImageUrl: selectedImageData.url, // Send the URL
+        profileImageName: selectedImageData.name, // Send the name
     };
 
 
     try {
-        const success = await signupUser(signupData);
-        if (success) {
+        const { success, message, userData } = await signupUser(signupData);
+        if (success && userData) {
             toast({
                 title: "Signup Successful",
                 description: "Your account has been created.",
             });
             // Store user data in localStorage for profile page
-            localStorage.setItem('userData', JSON.stringify({
-                name: data.name,
-                mobile: data.mobile,
-                profileImageUrl: selectedImageData?.url,
-                profileImageName: selectedImageData?.name,
-                // Don't store password
-            }));
+             if (typeof window !== 'undefined') {
+               localStorage.setItem('userData', JSON.stringify(userData));
+               localStorage.removeItem('pendingMobile'); // Clean up temp storage
+             }
             router.push('/profile');
         } else {
              toast({
                 title: "Signup Failed",
-                description: "Could not create account. Please try again.",
+                description: message || "Could not create account. Please try again.",
                 variant: "destructive",
             });
              setIsLoading(false);
@@ -239,7 +277,7 @@ export default function SignupPage() {
                           placeholder="Enter your 10-digit mobile number"
                           className="pl-10"
                           {...field}
-                          disabled={isLoading}
+                          disabled={isLoading} // Ensure mobile is not editable if pre-filled and user exists check was done
                         />
                       </div>
                     </FormControl>

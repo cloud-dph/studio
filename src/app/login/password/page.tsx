@@ -18,13 +18,35 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Lock } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
+import { db } from '@/lib/firebase'; // Import Firestore instance
+import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 
-// Mock authentication function - replace with actual API call
-const authenticateUser = async (mobile: string, password: string): Promise<boolean> => {
-   // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  // Simple check (e.g., password is 'password123')
-  return password === 'password123';
+// Authenticate user against Firestore data
+// WARNING: Storing and comparing plain text passwords is highly insecure!
+// In a real application, you MUST hash passwords securely (e.g., using bcrypt)
+// before storing them and compare the hash during login.
+const authenticateUser = async (mobile: string, password: string): Promise<{ success: boolean; userData?: any }> => {
+  try {
+    const userDocRef = doc(db, 'users', mobile);
+    const userDocSnap = await getDoc(userDocRef);
+
+    if (userDocSnap.exists()) {
+      const userData = userDocSnap.data();
+      // Insecure comparison - Replace with hash comparison in production
+      if (userData.password === password) {
+        // Don't send password back to the client
+        const { password: _, ...userDataToReturn } = userData;
+        return { success: true, userData: { ...userDataToReturn, mobile } }; // Include mobile
+      } else {
+        return { success: false }; // Incorrect password
+      }
+    } else {
+      return { success: false }; // User not found (shouldn't happen if coming from login flow)
+    }
+  } catch (error) {
+    console.error("Error authenticating user from Firestore:", error);
+    throw new Error("Authentication failed.");
+  }
 };
 
 const FormSchema = z.object({
@@ -42,13 +64,19 @@ export default function PasswordPage() {
 
   // Redirect if mobile number is missing
   React.useEffect(() => {
-    if (!mobile) {
-      toast({
-        title: "Error",
-        description: "Mobile number not provided.",
-        variant: "destructive",
-      });
-      router.push('/login');
+    if (!mobile && typeof window !== 'undefined') {
+       const storedMobile = localStorage.getItem('pendingMobile');
+       if (storedMobile) {
+         // Optionally redirect with stored mobile if query param missing
+         router.replace(`/login/password?mobile=${storedMobile}`);
+       } else {
+         toast({
+           title: "Error",
+           description: "Mobile number not provided.",
+           variant: "destructive",
+         });
+         router.push('/login');
+       }
     }
   }, [mobile, router, toast]);
 
@@ -65,16 +93,22 @@ export default function PasswordPage() {
     setIsLoading(true);
 
     try {
-        const isAuthenticated = await authenticateUser(mobile, data.password);
+        const { success, userData } = await authenticateUser(mobile, data.password);
 
-        if (isAuthenticated) {
+        if (success && userData) {
              // Store user session info if needed (e.g., localStorage, context)
-             // For now, just redirecting
-             window.location.href = 'http://abc.xyz'; // External redirect
+             // For now, just store essential data for profile page access
+             if (typeof window !== 'undefined') {
+               localStorage.setItem('userData', JSON.stringify(userData));
+               localStorage.removeItem('pendingMobile'); // Clean up temp storage
+             }
+             // Redirect to profile page after successful login
+             router.push('/profile');
+             // Original external redirect: window.location.href = 'http://abc.xyz';
         } else {
              toast({
                 title: "Login Failed",
-                description: "Incorrect password. Please try again.",
+                description: "Incorrect mobile number or password. Please try again.",
                 variant: "destructive",
             });
             setIsLoading(false);
@@ -83,7 +117,7 @@ export default function PasswordPage() {
         console.error("Authentication error:", error);
          toast({
             title: "Error",
-            description: "An error occurred during login. Please try again.",
+            description: error instanceof Error ? error.message : "An error occurred during login. Please try again.",
             variant: "destructive",
         });
         setIsLoading(false);
@@ -92,7 +126,7 @@ export default function PasswordPage() {
 
   if (!mobile) {
     // Render nothing or a loading indicator while redirecting
-    return null;
+    return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
   }
 
 
