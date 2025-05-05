@@ -1,7 +1,8 @@
+
 'use client';
 
 import * as React from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Keep for internal routing
 import Image from 'next/image';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
@@ -88,7 +89,7 @@ const FormSchema = z.object({
 });
 
 export default function SignupPage() {
-  const router = useRouter();
+  const router = useRouter(); // Keep for internal routing (e.g., back to login)
   const searchParams = useSearchParams();
   const initialMobile = searchParams.get('mobile') || '';
   const { toast } = useToast();
@@ -100,21 +101,29 @@ export default function SignupPage() {
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedData = localStorage.getItem('userData');
+      let isLoggedIn = false;
       if (storedData) {
          try {
             const parsedData = JSON.parse(storedData);
             if (parsedData && parsedData.mobile) {
-                router.replace('/profile'); // Already logged in, redirect to profile
-                return; // Exit early
+               isLoggedIn = true;
+            } else {
+               localStorage.removeItem('userData'); // Clear invalid data
             }
          } catch (e) {
             console.error("Error parsing user data on signup page", e);
             localStorage.removeItem('userData'); // Clear corrupted data
          }
       }
-      setIsCheckingAuth(false); // Finished checking, user is not logged in
+
+       if (isLoggedIn) {
+            // User is logged in, redirect to the external site
+            window.location.href = 'http://abc.xyz';
+       } else {
+         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
+       }
     }
-  }, [router]);
+  }, []); // Empty dependency array ensures this runs only once on mount
 
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -129,17 +138,18 @@ export default function SignupPage() {
 
    // Update mobile in form if query param changes
   React.useEffect(() => {
-    if (initialMobile) {
-      form.setValue('mobile', initialMobile);
-    }
-     // Also check local storage if query param is missing
-    else if (typeof window !== 'undefined') {
+    let mobileToSet = initialMobile;
+    // Also check local storage if query param is missing
+    if (!mobileToSet && typeof window !== 'undefined') {
       const storedMobile = localStorage.getItem('pendingMobile');
       if (storedMobile) {
-          form.setValue('mobile', storedMobile);
+          mobileToSet = storedMobile;
       }
     }
-  }, [initialMobile, form]);
+    if (mobileToSet) {
+       form.setValue('mobile', mobileToSet);
+    }
+  }, [initialMobile, form]); // Rerun if initialMobile changes or form instance is new
 
   React.useEffect(() => {
      form.register('profileImage'); // Ensure profileImage is registered
@@ -182,12 +192,14 @@ export default function SignupPage() {
                 title: "Signup Successful",
                 description: "Your account has been created.",
             });
-            // Store user data in localStorage for profile page
+            // Store user data in localStorage
              if (typeof window !== 'undefined') {
                localStorage.setItem('userData', JSON.stringify(userData));
                localStorage.removeItem('pendingMobile'); // Clean up temp storage
+               // Redirect to external site after successful signup
+               window.location.href = 'http://abc.xyz';
              }
-            router.push('/profile');
+            // router.push('/profile'); // Replaced with external redirect
         } else {
              toast({
                 title: "Signup Failed",
@@ -205,9 +217,10 @@ export default function SignupPage() {
         });
         setIsLoading(false);
     }
+     // setIsLoading(false) handled in failure cases; success redirects
   }
 
-   // Show loading indicator while checking auth status
+   // Show loading indicator while checking auth status or redirecting
   if (isCheckingAuth) {
       return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }
@@ -304,7 +317,8 @@ export default function SignupPage() {
                           placeholder="Enter your 10-digit mobile number"
                           className="pl-10"
                           {...field}
-                          disabled={isLoading || !!initialMobile || !!(typeof window !== 'undefined' && localStorage.getItem('pendingMobile'))} // Disable if mobile is pre-filled
+                          // Disable if mobile is pre-filled from previous step (query param or localStorage)
+                          disabled={isLoading || !!initialMobile || !!(typeof window !== 'undefined' && localStorage.getItem('pendingMobile'))}
                         />
                       </div>
                     </FormControl>

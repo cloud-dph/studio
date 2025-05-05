@@ -1,3 +1,4 @@
+
 'use client';
 
 import * as React from 'react';
@@ -65,7 +66,7 @@ export default function ProfilePage() {
               variant: "destructive",
             });
             router.push('/login');
-            setIsLoading(false); // End loading as redirection occurs
+            // No need to set isLoading(false) here as redirection will happen
           }
         }
       } else {

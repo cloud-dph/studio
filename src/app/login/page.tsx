@@ -1,7 +1,8 @@
+
 'use client';
 
 import * as React from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // Keep for internal routing if needed
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -42,7 +43,7 @@ const FormSchema = z.object({
 });
 
 export default function LoginPage() {
-  const router = useRouter();
+  const router = useRouter(); // Keep for navigation within the app (e.g., to signup/password)
   const { toast } = useToast();
   const [isLoading, setIsLoading] = React.useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = React.useState(true); // State to manage auth check
@@ -51,21 +52,29 @@ export default function LoginPage() {
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedData = localStorage.getItem('userData');
+      let isLoggedIn = false;
       if (storedData) {
         try {
           const parsedData = JSON.parse(storedData);
           if (parsedData && parsedData.mobile) {
-            router.replace('/profile'); // Already logged in, redirect to profile
-            return; // Exit early
+             isLoggedIn = true;
+          } else {
+             localStorage.removeItem('userData'); // Clear invalid data
           }
         } catch (e) {
            console.error("Error parsing user data on login page", e);
            localStorage.removeItem('userData'); // Clear corrupted data
         }
       }
-       setIsCheckingAuth(false); // Finished checking, user is not logged in
+
+      if (isLoggedIn) {
+          // User is logged in, redirect to the external site
+          window.location.href = 'http://abc.xyz';
+      } else {
+         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
+      }
     }
-  }, [router]);
+  }, []); // Empty dependency array ensures this runs only once on mount
 
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -85,6 +94,7 @@ export default function LoginPage() {
 
       const userExists = await checkUserExists(data.mobile);
       if (userExists) {
+        // Use router for internal navigation
         router.push(`/login/password?mobile=${data.mobile}`);
       } else {
         router.push(`/signup?mobile=${data.mobile}`);
@@ -105,7 +115,7 @@ export default function LoginPage() {
     // No need to setIsLoading(false) here as navigation occurs
   }
 
-  // Show loading indicator while checking auth status
+  // Show loading indicator while checking auth status or redirecting
   if (isCheckingAuth) {
       return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }
