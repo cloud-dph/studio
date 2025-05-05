@@ -1,4 +1,5 @@
 
+
 import type { Timestamp } from 'firebase/firestore';
 
 export interface Profile {
@@ -16,3 +17,4 @@ export interface UserAccount {
   createdAt: Timestamp | Date; // Store creation timestamp
   // Add other account-level settings here if needed (e.g., subscription status)
 }
+

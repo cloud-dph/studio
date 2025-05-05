@@ -162,17 +162,6 @@ export default function ProfilePage() {
                     </div>
                 ))}
 
-                 {/* Add Profile Button */}
-                 <div
-                    className="flex flex-col items-center text-center cursor-pointer group"
-                    onClick={handleManageProfiles} // Link to manage profiles page
-                 >
-                     <Avatar className="h-20 w-20 sm:h-24 sm:w-24 md:h-28 md:w-28 border-4 border-transparent group-hover:border-muted-foreground transition-colors duration-200 ease-in-out flex items-center justify-center bg-muted/30 hover:bg-muted/50">
-                         <Plus className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground group-hover:text-foreground" />
-                     </Avatar>
-                    <p className="mt-2 text-sm sm:text-base text-foreground">Add Profile</p>
-                 </div>
-
              </div>
 
              <Button variant="outline" onClick={handleManageProfiles} className="mb-4">
@@ -186,3 +175,4 @@ export default function ProfilePage() {
     </div>
   );
 }
+
