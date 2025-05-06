@@ -2,11 +2,11 @@
 'use client';
 
 import * as React from 'react';
+import Image from 'next/image'; // Import Next Image
 import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-// Removed uuid import as it's not needed for the simplified structure
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -15,15 +15,26 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormDescription, // Keep FormDescription import
+  FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionComponent } from '@/components/ui/card'; // Alias to avoid naming conflict
+import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionComponent } from '@/components/ui/card';
 import { Phone, Lock, User } from 'lucide-react';
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
 import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase';
-import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore'; // Import Timestamp
-import type { UserAccount } from '@/types/user'; // Import UserAccount type only
+import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
+import type { UserAccount } from '@/types/user';
+import { cn } from '@/lib/utils'; // Import cn for conditional classes
+
+// Define available profile pictures
+const profilePictures = [
+  { id: 'dp1', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/19.png', alt: 'Profile Picture 1', aiHint: 'abstract pattern' },
+  { id: 'dp2', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/9.png', alt: 'Profile Picture 2', aiHint: 'geometric design' },
+  { id: 'dp3', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/24.png', alt: 'Profile Picture 3', aiHint: 'nature illustration' },
+  { id: 'dp4', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/v1/feature/profile/27.png', alt: 'Profile Picture 4', aiHint: 'minimalist graphic' },
+  { id: 'dp5', url: 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/8.png', alt: 'Profile Picture 5', aiHint: 'colorful design' },
+];
 
 // Signup function to save user account to Firestore
 const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: boolean; message?: string; userAccount?: Omit<UserAccount, 'password'> }> => {
@@ -39,19 +50,19 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
     const userAccountData: UserAccount = {
       mobile: data.mobile,
       password: data.password, // INSECURE - HASH IN PRODUCTION
-      name: data.name.trim(), // Store name directly on the account
-      createdAt: Timestamp.now(), // Use Firestore Timestamp for server-side timestamp
+      name: data.name.trim(),
+      profilePictureUrl: data.profilePictureUrl, // Add profile picture URL
+      createdAt: Timestamp.now(),
     };
 
     await setDoc(userDocRef, userAccountData);
     console.log("User signed up and data saved to Firestore:", userAccountData.mobile);
 
     // Prepare data to return to client (and store in localStorage) - excluding password
-    // Convert Firestore Timestamp to Date for client-side consistency if needed
     const { password: _, createdAt, ...accountBase } = userAccountData;
     const accountForClient: Omit<UserAccount, 'password'> = {
         ...accountBase,
-        createdAt: createdAt.toDate(), // Convert Timestamp to Date for localStorage
+        createdAt: createdAt.toDate(),
     };
 
     return { success: true, userAccount: accountForClient };
@@ -66,13 +77,14 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
 const FormSchema = z.object({
   name: z.string().min(1, {
     message: 'Name must be at least 1 character.',
-  }).max(50, {message: 'Name cannot exceed 50 characters.'}), // Increased max length slightly
+  }).max(50, {message: 'Name cannot exceed 50 characters.'}),
   mobile: z.string().regex(/^\d{10}$/, {
     message: 'Mobile number must be 10 digits.',
   }),
   password: z.string().min(6, {
     message: 'Password must be at least 6 characters.',
   }),
+  profilePictureUrl: z.string().url({ message: "Please select a profile picture." }), // Add profile picture URL validation
 });
 
 export default function SignupPage() {
@@ -91,7 +103,7 @@ export default function SignupPage() {
       if (storedData) {
          try {
             const parsedData = JSON.parse(storedData);
-            if (parsedData && parsedData.mobile) { // Simplified check
+            if (parsedData && parsedData.mobile) {
                isLoggedIn = true;
             } else {
                localStorage.removeItem('userAccount');
@@ -103,10 +115,9 @@ export default function SignupPage() {
       }
 
        if (isLoggedIn) {
-            // User is logged in, redirect to external site immediately
             window.location.href = 'http://abc.xyz';
        } else {
-         setIsCheckingAuth(false); // Finished checking, user is not logged in
+         setIsCheckingAuth(false);
        }
     }
   }, [router]);
@@ -118,6 +129,7 @@ export default function SignupPage() {
       name: '',
       mobile: initialMobile,
       password: '',
+      profilePictureUrl: '', // Default to empty
     },
   });
 
@@ -140,7 +152,6 @@ export default function SignupPage() {
     setIsLoading(true);
 
     try {
-        // Pass validated form data to signup function
         const { success, message, userAccount } = await signupUser(data);
 
         if (success && userAccount) {
@@ -148,12 +159,9 @@ export default function SignupPage() {
                 title: "Signup Successful",
                 description: "Redirecting...",
             });
-            // Store user account data (without password) in localStorage
              if (typeof window !== 'undefined') {
                localStorage.setItem('userAccount', JSON.stringify(userAccount));
-               localStorage.removeItem('pendingMobile'); // Clean up temp storage
-
-               // Redirect to external site after successful signup
+               localStorage.removeItem('pendingMobile');
                window.location.href = 'http://abc.xyz';
              }
         } else {
@@ -175,7 +183,6 @@ export default function SignupPage() {
     }
   }
 
-   // Show loading indicator while checking auth status or redirecting externally
   if (isCheckingAuth) {
       return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }
@@ -183,7 +190,7 @@ export default function SignupPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md shadow-lg"> {/* Adjusted max-width */}
+      <Card className="w-full max-w-md shadow-lg">
         <CardHeader>
           <CardTitle className="text-2xl font-bold text-center">Create Account</CardTitle>
            <CardDescriptionComponent className="text-center text-muted-foreground">
@@ -224,7 +231,6 @@ export default function SignupPage() {
                           placeholder="Enter your 10-digit mobile number"
                           className="pl-10"
                           {...field}
-                          // Disable if mobile is pre-filled
                           disabled={isLoading || !!initialMobile || !!(typeof window !== 'undefined' && localStorage.getItem('pendingMobile'))}
                         />
                       </div>
@@ -259,13 +265,56 @@ export default function SignupPage() {
                   </FormItem>
                 )}
               />
+
+              {/* Profile Picture Selection */}
+              <FormField
+                control={form.control}
+                name="profilePictureUrl"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormLabel>Choose Your Profile Picture</FormLabel>
+                    <FormControl>
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        className="flex flex-wrap gap-4 justify-center"
+                        disabled={isLoading}
+                      >
+                        {profilePictures.map((pic) => (
+                          <FormItem key={pic.id} className="flex items-center space-x-3 space-y-0 cursor-pointer">
+                            <FormControl>
+                                <RadioGroupItem value={pic.url} id={pic.id} className="sr-only" />
+                            </FormControl>
+                             <FormLabel htmlFor={pic.id} className={cn(
+                                "rounded-full overflow-hidden border-2 border-transparent transition-all",
+                                field.value === pic.url && "border-primary ring-2 ring-primary ring-offset-2 ring-offset-background"
+                              )}>
+                                <Image
+                                    src={pic.url}
+                                    alt={pic.alt}
+                                    width={64}
+                                    height={64}
+                                    className="rounded-full object-cover"
+                                    data-ai-hint={pic.aiHint}
+                                />
+                             </FormLabel>
+                          </FormItem>
+                        ))}
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+
               <Button type="submit" className="w-full" disabled={isLoading}>
                  {isLoading ? 'Creating Account...' : 'Sign Up'}
               </Button>
             </form>
           </Form>
            <div className="mt-4 text-center text-sm">
-            <Button variant="link" onClick={() => router.push('/login')} className="text-primary">
+            <Button variant="link" onClick={() => router.push('/login')} className="text-primary" disabled={isLoading}>
               Already have an account? Log In
             </Button>
           </div>
