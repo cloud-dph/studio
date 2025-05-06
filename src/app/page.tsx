@@ -17,7 +17,7 @@ export default function Home() {
         try {
           const parsedData = JSON.parse(storedData);
           // Basic validation: Check if it has mobile and profiles array
-          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) {
+          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) {
             isLoggedIn = true;
           } else {
             // Invalid data, clear it
@@ -30,15 +30,16 @@ export default function Home() {
       }
 
       if (isLoggedIn) {
-        // User is logged in (has account data), redirect straight to content
-         window.location.href = 'http://abc.xyz';
+        // User is logged in (has account data), redirect to profile page
+        router.replace('/profile'); // Use internal routing
       } else {
         // User is not logged in, redirect to login page
         router.replace('/login');
       }
 
-      // No need to set isLoading to false as redirection should happen.
-      // If redirection fails, the loading state remains, preventing content flash.
+      // Set loading to false only if not redirecting, though redirection usually happens fast
+      // setIsLoading(false); // Removed as redirection should occur
+
     }
   }, [router]); // Add router to dependency array
 
@@ -46,4 +47,3 @@ export default function Home() {
   // This prevents a flash of content before redirection.
   return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
 }
-

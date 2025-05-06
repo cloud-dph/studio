@@ -57,7 +57,7 @@ export default function LoginPage() {
         try {
           const parsedData = JSON.parse(storedData);
           // Basic validation
-          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) {
+          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) {
             isLoggedIn = true;
           } else {
             localStorage.removeItem('userAccount'); // Clear invalid data
@@ -69,8 +69,8 @@ export default function LoginPage() {
       }
 
       if (isLoggedIn) {
-        // User is logged in, redirect straight to content
-        window.location.href = 'http://abc.xyz';
+        // User is logged in, redirect to profile page
+        router.replace('/profile'); // Use internal routing
       } else {
         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
       }
@@ -164,4 +164,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

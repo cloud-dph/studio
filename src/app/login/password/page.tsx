@@ -22,26 +22,29 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase'; // Import Firestore instance
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 import type { UserAccount } from '@/types/user'; // Import shared types
+import { analyzeLoginAttempt, type AnalyzeLoginOutput } from '@/ai/flows/analyze-login-flow'; // Import GenAI flow
 
 // Authenticate user against Firestore data
-// Fetches the user account document which includes profile (singular)
-const authenticateUser = async (mobile: string, password: string): Promise<{ success: boolean; userAccount?: UserAccount }> => {
+const authenticateUser = async (mobile: string, password: string): Promise<{ success: boolean; userData?: Omit<UserAccount, 'password'> }> => {
   try {
     const userDocRef = doc(db, 'users', mobile);
     const userDocSnap = await getDoc(userDocRef);
 
     if (userDocSnap.exists()) {
-      const accountData = userDocSnap.data() as Omit<UserAccount, 'mobile'>; // Type cast without mobile initially
+      const accountData = userDocSnap.data() as UserAccount; // Type cast
       // INSECURE COMPARISON - Replace with hash comparison in production
       if (accountData.password === password) {
-        // Construct the full UserAccount object including mobile
-        const userAccount: UserAccount = {
-          mobile: mobile, // Add mobile from the doc ID
-          profiles: accountData.profiles || [], // Ensure profiles array exists (though expecting only one)
-          password: accountData.password, // Keep password for now, but don't store in localStorage
-          createdAt: accountData.createdAt,
-        };
-        return { success: true, userAccount };
+        // Prepare data to return (excluding password)
+        // Convert Timestamp to Date before storing if it exists
+        const { password: _, createdAt, ...accountBase } = accountData;
+        let userData: Omit<UserAccount, 'password'>;
+        if (createdAt && typeof createdAt.toDate === 'function') {
+          userData = { ...accountBase, createdAt: createdAt.toDate() };
+        } else {
+          // Handle case where createdAt might not be a Timestamp (e.g., already a Date or undefined)
+          userData = { ...accountBase, createdAt: createdAt || new Date() };
+        }
+        return { success: true, userData };
       } else {
         return { success: false }; // Incorrect password
       }
@@ -76,7 +79,7 @@ export default function PasswordPage() {
       if (storedData) {
         try {
           const parsedData = JSON.parse(storedData);
-          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) { // Validate structure
+          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) { // Validate structure
             isLoggedIn = true;
           } else {
             localStorage.removeItem('userAccount'); // Clear invalid data
@@ -88,8 +91,8 @@ export default function PasswordPage() {
       }
 
       if (isLoggedIn) {
-        // User is logged in, redirect straight to content
-         window.location.href = 'http://abc.xyz';
+        // User is logged in, redirect to profile page
+         router.replace('/profile'); // Use internal routing
       } else {
         setIsCheckingAuth(false); // Finished checking, user is not logged in
       }
@@ -127,27 +130,57 @@ export default function PasswordPage() {
     setIsLoading(true);
 
     try {
-      const { success, userAccount } = await authenticateUser(mobile, data.password);
+      const { success, userData } = await authenticateUser(mobile, data.password);
 
-      if (success && userAccount) {
+      if (success && userData) {
+        // Analyze login attempt using GenAI
+        let analysisResult: AnalyzeLoginOutput | null = null;
+        try {
+          analysisResult = await analyzeLoginAttempt({
+            mobile: mobile,
+            timestamp: new Date().toISOString(),
+            // In a real app, gather IP and User Agent here if possible
+          });
+
+          console.log("Login Analysis:", analysisResult);
+
+          if (analysisResult.isSuspicious) {
+            // Handle suspicious login - e.g., show warning, require MFA, log event
+            toast({
+              title: "Security Alert",
+              description: `Potential suspicious activity detected: ${analysisResult.reason} (Score: ${analysisResult.riskScore.toFixed(2)})`,
+              variant: "destructive", // Or a specific 'warning' variant if available
+              duration: 7000, // Show for longer
+            });
+            // Decide if you want to block login or just warn
+            // For now, we'll proceed but show the warning
+          } else {
+            toast({
+              title: "Security Check",
+              description: `Login analysis complete: ${analysisResult.reason}`,
+              duration: 3000,
+            });
+          }
+
+        } catch (analysisError) {
+          console.error("Error analyzing login attempt:", analysisError);
+          // Decide if failure to analyze should block login or just be logged
+          toast({
+            title: "Security Analysis Skipped",
+            description: "Could not perform security analysis on this login attempt.",
+            variant: "default", // Neutral variant
+            duration: 5000,
+          });
+        }
+
         // Store user account info (excluding password)
         if (typeof window !== 'undefined') {
-          // Prepare data for localStorage (remove password)
-          // Convert Timestamp to Date before storing if it exists
-           const { password: _, createdAt, ...accountBase } = userAccount;
-           let accountToStore: Omit<UserAccount, 'password'>;
-           if (createdAt && typeof createdAt.toDate === 'function') {
-                accountToStore = { ...accountBase, createdAt: createdAt.toDate() };
-           } else {
-                // Handle case where createdAt might not be a Timestamp (e.g., already a Date or undefined)
-                accountToStore = { ...accountBase, createdAt: createdAt || new Date() };
-           }
-
-          localStorage.setItem('userAccount', JSON.stringify(accountToStore));
+          localStorage.setItem('userAccount', JSON.stringify(userData));
           localStorage.removeItem('pendingMobile'); // Clean up temp storage
 
-          // Redirect straight to content after successful login
-          window.location.href = 'http://abc.xyz';
+          // Redirect to profile page after successful login and analysis
+          await new Promise(resolve => setTimeout(resolve, analysisResult?.isSuspicious ? 1500 : 500)); // Small delay if needed
+          router.push('/profile'); // Use internal routing
         }
       } else {
         toast({
@@ -166,6 +199,7 @@ export default function PasswordPage() {
       });
       setIsLoading(false);
     }
+    // setIsLoading(false) might not be needed if redirect always happens
   }
 
   // Show loading indicator while checking auth status or redirecting
@@ -228,4 +262,3 @@ export default function PasswordPage() {
     </div>
   );
 }
-

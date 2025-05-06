@@ -39,7 +39,7 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
       return { success: false, message: "Mobile number already registered." };
     }
 
-    // Create the first (and only) user profile
+    // Create the first user profile based on signup name
     const initialProfile: Profile = {
         id: uuidv4(), // Generate unique ID
         name: data.name.trim(),
@@ -51,7 +51,7 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
     const userAccountData: UserAccount = {
       mobile: data.mobile,
       password: data.password, // INSECURE - HASH IN PRODUCTION
-      profiles: [initialProfile], // Store only the single profile
+      profiles: [initialProfile], // Store the single profile
       createdAt: Timestamp.now(), // Use Firestore Timestamp for server-side timestamp
     };
 
@@ -59,7 +59,7 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
     console.log("User signed up and data saved to Firestore:", userAccountData.mobile);
 
     // Prepare data to return to client (and store in localStorage) - excluding password
-    // Convert Firestore Timestamp to Date for client-side consistency if needed, or keep as is
+    // Convert Firestore Timestamp to Date for client-side consistency if needed
     const { password: _, createdAt, ...accountBase } = userAccountData;
     const accountForClient: Omit<UserAccount, 'password'> = {
         ...accountBase,
@@ -85,7 +85,6 @@ const FormSchema = z.object({
   password: z.string().min(6, {
     message: 'Password must be at least 6 characters.',
   }),
-  // profileImage field removed
 });
 
 export default function SignupPage() {
@@ -104,7 +103,7 @@ export default function SignupPage() {
       if (storedData) {
          try {
             const parsedData = JSON.parse(storedData);
-            if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles)) {
+            if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) {
                isLoggedIn = true;
             } else {
                localStorage.removeItem('userAccount');
@@ -116,8 +115,8 @@ export default function SignupPage() {
       }
 
        if (isLoggedIn) {
-            // User is logged in, redirect straight to content
-            window.location.href = 'http://abc.xyz';
+            // User is logged in, redirect to profile page
+            router.replace('/profile'); // Use internal routing
        } else {
          setIsCheckingAuth(false); // Finished checking, user is not logged in
        }
@@ -131,7 +130,6 @@ export default function SignupPage() {
       name: '',
       mobile: initialMobile,
       password: '',
-      // profileImage default removed
     },
   });
 
@@ -167,8 +165,8 @@ export default function SignupPage() {
                localStorage.setItem('userAccount', JSON.stringify(userAccount));
                localStorage.removeItem('pendingMobile'); // Clean up temp storage
 
-               // Redirect straight to content after successful signup
-               window.location.href = 'http://abc.xyz';
+               // Redirect to profile page after successful signup
+               router.push('/profile'); // Use internal routing
              }
         } else {
              toast({
@@ -290,4 +288,3 @@ export default function SignupPage() {
     </div>
   );
 }
-
