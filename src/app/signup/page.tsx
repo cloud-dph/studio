@@ -15,17 +15,25 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormDescription,
+  FormDescription, // Import FormDescription
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionComponent } from '@/components/ui/card';
 import { Phone, Lock, User } from 'lucide-react';
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"; // Import RadioGroup
+// Remove RadioGroup imports as we are using Carousel now
+// import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import type { UserAccount } from '@/types/user';
 import { cn } from '@/lib/utils'; // Import cn for conditional classes
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel"; // Import Carousel components
 
 // Define available profile pictures
 const profilePictures = [
@@ -75,6 +83,7 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
 
 
 const FormSchema = z.object({
+  profilePictureUrl: z.string().url({ message: "Please select a profile picture." }), // Add profile picture URL validation
   name: z.string().min(1, {
     message: 'Name must be at least 1 character.',
   }).max(50, {message: 'Name cannot exceed 50 characters.'}),
@@ -84,7 +93,6 @@ const FormSchema = z.object({
   password: z.string().min(6, {
     message: 'Password must be at least 6 characters.',
   }),
-  profilePictureUrl: z.string().url({ message: "Please select a profile picture." }), // Add profile picture URL validation
 });
 
 export default function SignupPage() {
@@ -126,10 +134,10 @@ export default function SignupPage() {
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
+      profilePictureUrl: '', // Default to empty
       name: '',
       mobile: initialMobile,
       password: '',
-      profilePictureUrl: '', // Default to empty
     },
   });
 
@@ -200,6 +208,61 @@ export default function SignupPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+
+             {/* Profile Picture Selection using Carousel */}
+             <FormField
+                control={form.control}
+                name="profilePictureUrl"
+                render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormLabel className="text-center block">Choose Your Profile Picture</FormLabel>
+                    <FormControl>
+                       <Carousel
+                          opts={{
+                              align: "center",
+                              loop: true, // Optional: allow looping
+                          }}
+                          className="w-full max-w-xs mx-auto" // Center carousel
+                          >
+                          <CarouselContent className="-ml-1">
+                              {profilePictures.map((pic) => (
+                              <CarouselItem key={pic.id} className="pl-1 basis-1/3"> {/* Show 3 items */}
+                                  <div className="p-1">
+                                  <Image
+                                      src={pic.url}
+                                      alt={pic.alt}
+                                      width={80} // Adjusted size
+                                      height={80} // Adjusted size
+                                      className={cn(
+                                          "rounded-full object-cover mx-auto cursor-pointer border-2 border-transparent transition-all hover:opacity-80",
+                                          field.value === pic.url && "border-primary ring-2 ring-primary ring-offset-2 ring-offset-background"
+                                      )}
+                                      data-ai-hint={pic.aiHint}
+                                      onClick={() => field.onChange(pic.url)} // Set value on click
+                                      role="button"
+                                      aria-pressed={field.value === pic.url}
+                                      tabIndex={0} // Make it focusable
+                                      onKeyDown={(e) => {
+                                          if (e.key === 'Enter' || e.key === ' ') {
+                                            e.preventDefault();
+                                            field.onChange(pic.url);
+                                          }
+                                      }}
+                                  />
+                                  </div>
+                              </CarouselItem>
+                              ))}
+                          </CarouselContent>
+                          <CarouselPrevious className="absolute left-[-50px] top-1/2 -translate-y-1/2"/> {/* Adjust positioning */}
+                          <CarouselNext className="absolute right-[-50px] top-1/2 -translate-y-1/2"/> {/* Adjust positioning */}
+                       </Carousel>
+                    </FormControl>
+                    <FormMessage className="text-center"/>
+                  </FormItem>
+                )}
+              />
+
+
               <FormField
                 control={form.control}
                 name="name"
@@ -265,48 +328,6 @@ export default function SignupPage() {
                   </FormItem>
                 )}
               />
-
-              {/* Profile Picture Selection */}
-              <FormField
-                control={form.control}
-                name="profilePictureUrl"
-                render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormLabel>Choose Your Profile Picture</FormLabel>
-                    <FormControl>
-                      <RadioGroup
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        className="flex flex-wrap gap-4 justify-center"
-                        disabled={isLoading}
-                      >
-                        {profilePictures.map((pic) => (
-                          <FormItem key={pic.id} className="flex items-center space-x-3 space-y-0 cursor-pointer">
-                            <FormControl>
-                                <RadioGroupItem value={pic.url} id={pic.id} className="sr-only" />
-                            </FormControl>
-                             <FormLabel htmlFor={pic.id} className={cn(
-                                "rounded-full overflow-hidden border-2 border-transparent transition-all",
-                                field.value === pic.url && "border-primary ring-2 ring-primary ring-offset-2 ring-offset-background"
-                              )}>
-                                <Image
-                                    src={pic.url}
-                                    alt={pic.alt}
-                                    width={64}
-                                    height={64}
-                                    className="rounded-full object-cover"
-                                    data-ai-hint={pic.aiHint}
-                                />
-                             </FormLabel>
-                          </FormItem>
-                        ))}
-                      </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
 
               <Button type="submit" className="w-full" disabled={isLoading}>
                  {isLoading ? 'Creating Account...' : 'Sign Up'}
