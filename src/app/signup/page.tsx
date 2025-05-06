@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { v4 as uuidv4 } from 'uuid'; // For generating unique profile IDs
+// Removed uuid import as it's not needed for the simplified structure
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -15,7 +15,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-  FormDescription,
+  FormDescription, // Keep FormDescription import
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription as CardDescriptionComponent } from '@/components/ui/card'; // Alias to avoid naming conflict
@@ -23,13 +23,9 @@ import { Phone, Lock, User } from 'lucide-react';
 import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase';
 import { doc, setDoc, getDoc, Timestamp } from 'firebase/firestore'; // Import Timestamp
-import type { UserAccount, Profile } from '@/types/user'; // Import shared types
+import type { UserAccount } from '@/types/user'; // Import UserAccount type only
 
-// Default placeholder avatar URL
-const defaultAvatarUrl = 'https://img1.hotstarext.com/image/upload/w_200,h_200,c_fill/feature/profile/19.png';
-const defaultAvatarName = 'Default Avatar';
-
-// Signup function to save user account with a single initial profile to Firestore
+// Signup function to save user account to Firestore
 const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: boolean; message?: string; userAccount?: Omit<UserAccount, 'password'> }> => {
   try {
     const userDocRef = doc(db, 'users', data.mobile);
@@ -39,19 +35,11 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
       return { success: false, message: "Mobile number already registered." };
     }
 
-    // Create the first user profile based on signup name
-    const initialProfile: Profile = {
-        id: uuidv4(), // Generate unique ID
-        name: data.name.trim(),
-        profileImageUrl: defaultAvatarUrl, // Use default avatar
-        profileImageName: defaultAvatarName,
-    };
-
     // Prepare user account data for Firestore
     const userAccountData: UserAccount = {
       mobile: data.mobile,
       password: data.password, // INSECURE - HASH IN PRODUCTION
-      profiles: [initialProfile], // Store the single profile
+      name: data.name.trim(), // Store name directly on the account
       createdAt: Timestamp.now(), // Use Firestore Timestamp for server-side timestamp
     };
 
@@ -78,7 +66,7 @@ const signupUser = async (data: z.infer<typeof FormSchema>): Promise<{ success: 
 const FormSchema = z.object({
   name: z.string().min(1, {
     message: 'Name must be at least 1 character.',
-  }).max(20, {message: 'Name cannot exceed 20 characters.'}),
+  }).max(50, {message: 'Name cannot exceed 50 characters.'}), // Increased max length slightly
   mobile: z.string().regex(/^\d{10}$/, {
     message: 'Mobile number must be 10 digits.',
   }),
@@ -103,7 +91,7 @@ export default function SignupPage() {
       if (storedData) {
          try {
             const parsedData = JSON.parse(storedData);
-            if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) {
+            if (parsedData && parsedData.mobile) { // Simplified check
                isLoggedIn = true;
             } else {
                localStorage.removeItem('userAccount');
@@ -115,8 +103,8 @@ export default function SignupPage() {
       }
 
        if (isLoggedIn) {
-            // User is logged in, redirect to profile page
-            router.replace('/profile'); // Use internal routing
+            // User is logged in, redirect to external site immediately
+            window.location.href = 'http://abc.xyz';
        } else {
          setIsCheckingAuth(false); // Finished checking, user is not logged in
        }
@@ -158,15 +146,15 @@ export default function SignupPage() {
         if (success && userAccount) {
             toast({
                 title: "Signup Successful",
-                description: "Your account has been created.",
+                description: "Redirecting...",
             });
             // Store user account data (without password) in localStorage
              if (typeof window !== 'undefined') {
                localStorage.setItem('userAccount', JSON.stringify(userAccount));
                localStorage.removeItem('pendingMobile'); // Clean up temp storage
 
-               // Redirect to profile page after successful signup
-               router.push('/profile'); // Use internal routing
+               // Redirect to external site after successful signup
+               window.location.href = 'http://abc.xyz';
              }
         } else {
              toast({
@@ -187,7 +175,7 @@ export default function SignupPage() {
     }
   }
 
-   // Show loading indicator while checking auth status or redirecting
+   // Show loading indicator while checking auth status or redirecting externally
   if (isCheckingAuth) {
       return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }
@@ -205,8 +193,6 @@ export default function SignupPage() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Avatar Selection Removed */}
-
               <FormField
                 control={form.control}
                 name="name"

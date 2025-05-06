@@ -48,7 +48,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = React.useState(true); // State to manage auth check
 
-  // Check if user is already logged in (has an account stored)
+  // Check if user is already logged in
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedData = localStorage.getItem('userAccount'); // Check for userAccount
@@ -57,7 +57,7 @@ export default function LoginPage() {
         try {
           const parsedData = JSON.parse(storedData);
           // Basic validation
-          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) {
+          if (parsedData && parsedData.mobile) { // Simplified check
             isLoggedIn = true;
           } else {
             localStorage.removeItem('userAccount'); // Clear invalid data
@@ -69,8 +69,8 @@ export default function LoginPage() {
       }
 
       if (isLoggedIn) {
-        // User is logged in, redirect to profile page
-        router.replace('/profile'); // Use internal routing
+        // User is logged in, redirect to external site immediately
+        window.location.href = 'http://abc.xyz';
       } else {
         setIsCheckingAuth(false); // Finished checking, user is not logged in, allow form rendering
       }
@@ -117,7 +117,7 @@ export default function LoginPage() {
     // No need to setIsLoading(false) here as navigation occurs
   }
 
-  // Show loading indicator while checking auth status or redirecting
+  // Show loading indicator while checking auth status or redirecting externally
   if (isCheckingAuth) {
       return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }

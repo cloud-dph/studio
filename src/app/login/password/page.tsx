@@ -22,7 +22,6 @@ import { useToast } from "@/hooks/use-toast";
 import { db } from '@/lib/firebase'; // Import Firestore instance
 import { doc, getDoc } from 'firebase/firestore'; // Import Firestore functions
 import type { UserAccount } from '@/types/user'; // Import shared types
-import { analyzeLoginAttempt, type AnalyzeLoginOutput } from '@/ai/flows/analyze-login-flow'; // Import GenAI flow
 
 // Authenticate user against Firestore data
 const authenticateUser = async (mobile: string, password: string): Promise<{ success: boolean; userData?: Omit<UserAccount, 'password'> }> => {
@@ -79,7 +78,7 @@ export default function PasswordPage() {
       if (storedData) {
         try {
           const parsedData = JSON.parse(storedData);
-          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) { // Validate structure
+          if (parsedData && parsedData.mobile) { // Simplified check
             isLoggedIn = true;
           } else {
             localStorage.removeItem('userAccount'); // Clear invalid data
@@ -91,8 +90,8 @@ export default function PasswordPage() {
       }
 
       if (isLoggedIn) {
-        // User is logged in, redirect to profile page
-         router.replace('/profile'); // Use internal routing
+        // User is logged in, redirect to external site immediately
+         window.location.href = 'http://abc.xyz';
       } else {
         setIsCheckingAuth(false); // Finished checking, user is not logged in
       }
@@ -133,54 +132,18 @@ export default function PasswordPage() {
       const { success, userData } = await authenticateUser(mobile, data.password);
 
       if (success && userData) {
-        // Analyze login attempt using GenAI
-        let analysisResult: AnalyzeLoginOutput | null = null;
-        try {
-          analysisResult = await analyzeLoginAttempt({
-            mobile: mobile,
-            timestamp: new Date().toISOString(),
-            // In a real app, gather IP and User Agent here if possible
-          });
-
-          console.log("Login Analysis:", analysisResult);
-
-          if (analysisResult.isSuspicious) {
-            // Handle suspicious login - e.g., show warning, require MFA, log event
-            toast({
-              title: "Security Alert",
-              description: `Potential suspicious activity detected: ${analysisResult.reason} (Score: ${analysisResult.riskScore.toFixed(2)})`,
-              variant: "destructive", // Or a specific 'warning' variant if available
-              duration: 7000, // Show for longer
-            });
-            // Decide if you want to block login or just warn
-            // For now, we'll proceed but show the warning
-          } else {
-            toast({
-              title: "Security Check",
-              description: `Login analysis complete: ${analysisResult.reason}`,
-              duration: 3000,
-            });
-          }
-
-        } catch (analysisError) {
-          console.error("Error analyzing login attempt:", analysisError);
-          // Decide if failure to analyze should block login or just be logged
-          toast({
-            title: "Security Analysis Skipped",
-            description: "Could not perform security analysis on this login attempt.",
-            variant: "default", // Neutral variant
-            duration: 5000,
-          });
-        }
-
         // Store user account info (excluding password)
         if (typeof window !== 'undefined') {
           localStorage.setItem('userAccount', JSON.stringify(userData));
           localStorage.removeItem('pendingMobile'); // Clean up temp storage
 
-          // Redirect to profile page after successful login and analysis
-          await new Promise(resolve => setTimeout(resolve, analysisResult?.isSuspicious ? 1500 : 500)); // Small delay if needed
-          router.push('/profile'); // Use internal routing
+          // Redirect to external site after successful login
+          toast({
+            title: "Login Successful",
+            description: "Redirecting...",
+          });
+          // Use window.location.href for external redirection
+          window.location.href = 'http://abc.xyz';
         }
       } else {
         toast({
@@ -199,10 +162,10 @@ export default function PasswordPage() {
       });
       setIsLoading(false);
     }
-    // setIsLoading(false) might not be needed if redirect always happens
+    // setIsLoading(false) might not be needed if redirect always happens, but keep for error cases
   }
 
-  // Show loading indicator while checking auth status or redirecting
+  // Show loading indicator while checking auth status or redirecting externally
   if (isCheckingAuth) {
     return <div className="flex min-h-screen items-center justify-center">Checking session...</div>;
   }

@@ -6,7 +6,8 @@ import { useRouter } from 'next/navigation'; // Use Next.js router
 
 export default function Home() {
   const router = useRouter();
-  const [isLoading, setIsLoading] = React.useState(true); // Keep loading state
+  // Keep loading state true initially to prevent flashing content
+  const [isLoading, setIsLoading] = React.useState(true);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -16,8 +17,8 @@ export default function Home() {
       if (storedData) {
         try {
           const parsedData = JSON.parse(storedData);
-          // Basic validation: Check if it has mobile and profiles array
-          if (parsedData && parsedData.mobile && Array.isArray(parsedData.profiles) && parsedData.profiles.length > 0) {
+          // Basic validation: Check if it has mobile
+          if (parsedData && parsedData.mobile) {
             isLoggedIn = true;
           } else {
             // Invalid data, clear it
@@ -30,20 +31,26 @@ export default function Home() {
       }
 
       if (isLoggedIn) {
-        // User is logged in (has account data), redirect to profile page
-        router.replace('/profile'); // Use internal routing
+        // User is logged in (has account data), redirect to external site
+        window.location.href = 'http://abc.xyz';
+        // Keep loading true while redirecting externally
       } else {
         // User is not logged in, redirect to login page
         router.replace('/login');
+        // Set loading false after initiating internal redirect
+        setIsLoading(false);
       }
-
-      // Set loading to false only if not redirecting, though redirection usually happens fast
-      // setIsLoading(false); // Removed as redirection should occur
-
     }
   }, [router]); // Add router to dependency array
 
   // Render a loading state while checking localStorage and attempting redirection
   // This prevents a flash of content before redirection.
-  return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
+  // If redirecting externally, this loading state persists until the browser navigates away.
+  if (isLoading) {
+      return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
+  }
+
+  // Fallback content (shouldn't normally be reached if logic is correct)
+  return <div className="flex min-h-screen items-center justify-center">Redirecting...</div>;
+
 }
